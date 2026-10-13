@@ -12,5 +12,9 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["BookingScheduler"] }],
   "keep_vars": true,
+  "vars": {
+    "ACCESS_TEAM_DOMAIN": "morning-brook-0ce0.cloudflareaccess.com",
+    "ACCESS_AUD": "ae9822cbef4e530aca43981f4166a6d78de4abeb5f0539b0c94a9b2807bac658"
+  },
   "observability": { "enabled": false }
 }
