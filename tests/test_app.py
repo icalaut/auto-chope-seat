@@ -20,6 +20,9 @@ class InputTests(unittest.TestCase):
         self.assertEqual(len({station["code"] for station in data["stations"]}), 274)
         self.assertEqual(next(station["name"] for station in data["stations"] if station["code"] == "SIN"), "Singapore")
         self.assertEqual(next(station["name"] for station in data["stations"] if station["code"] == "BKK"), "Bangkok (Suvarnabhumi)")
+        self.assertTrue(all(station.get("timezone") for station in data["stations"]))
+        zones = json.loads((app.ROOT / "timezones.json").read_text())
+        self.assertTrue(all(station["timezone"] in zones for station in data["stations"]))
     def test_booking(self):
         self.assertEqual(booking_input({"pnr": " abc123 ", "departure": " Singapore ", "timezone": "Asia/Singapore"})["pnr"], "ABC123")
 
@@ -191,6 +194,34 @@ class BrowserTests(unittest.TestCase):
         self.assertEqual(controller.snapshot()["preview_error"], "")
         self.assertEqual(self.page.locator("#pnr").input_value(), "ABC123")
         self.assertEqual(self.page.evaluate("window.clicks||0"), 0)
+
+    def test_static_host_dropdowns_without_python_api(self):
+        requests = []
+
+        def serve(route):
+            from urllib.parse import urlparse
+            path = urlparse(route.request.url).path
+            requests.append(path)
+            filename = "index.html" if path == "/" else path.lstrip("/")
+            file = app.ROOT / filename
+            if filename in {"index.html", "app.js", "style.css", "stations.json", "timezones.json"}:
+                types = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json"}
+                route.fulfill(body=file.read_bytes(), content_type=types[file.suffix])
+            else:
+                route.fulfill(status=404, body="Not found")
+
+        self.page.route("https://fixture.pages.dev/**", serve)
+        self.page.goto("https://fixture.pages.dev/")
+        self.page.wait_for_function("document.querySelectorAll('#stations option').length === 274")
+        self.page.wait_for_function("document.querySelector('#status').textContent === 'Hosted form only'")
+        self.assertGreater(self.page.locator("#timezones option").count(), 100)
+        self.page.locator("[name=departure]").fill("Singapore")
+        self.assertEqual(self.page.locator("[name=timezone]").input_value(), "Asia/Singapore")
+        self.page.locator("[name=departure]").fill("Sydney (SYD) — Australia")
+        self.assertEqual(self.page.locator("[name=departure]").input_value(), "Sydney")
+        self.assertEqual(self.page.locator("[name=timezone]").input_value(), "Australia/Sydney")
+        self.assertTrue(self.page.locator("#schedule").is_disabled())
+        self.assertFalse(any(path.startswith("/api/") for path in requests))
 
     def test_closed_preview_reports_error_without_submission(self):
         self.page.close()

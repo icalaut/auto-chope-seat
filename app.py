@@ -344,9 +344,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.json_response(503, {"error": message or "Waiting for the controlled browser preview."})
             else:
                 self.send(200, image, "image/jpeg")
-        elif self.path in {"/", "/app.js", "/style.css"}:
+        elif self.path in {"/", "/app.js", "/style.css", "/stations.json", "/timezones.json"}:
             filename = "index.html" if self.path == "/" else self.path[1:]
-            content_type = {"/": "text/html; charset=utf-8", "/app.js": "text/javascript", "/style.css": "text/css"}[self.path]
+            content_type = {"/": "text/html; charset=utf-8", "/app.js": "text/javascript", "/style.css": "text/css",
+                            "/stations.json": "application/json", "/timezones.json": "application/json"}[self.path]
             self.send(200, (ROOT / filename).read_bytes(), content_type)
         else:
             self.json_response(404, {"error": "Not found."})

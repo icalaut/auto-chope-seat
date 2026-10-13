@@ -112,15 +112,46 @@ form.addEventListener("input", () => {
 });
 
 async function start() {
+  const lists = await Promise.allSettled([
+    request("./timezones.json").then(zones => {
+      if (!Array.isArray(zones) || !zones.length) throw new Error("Invalid timezone dataset.");
+      document.querySelector("#timezones").replaceChildren(...zones.map(zone => {
+        const option = document.createElement("option");
+        option.value = zone;
+        return option;
+      }));
+    }),
+    request("./stations.json").then(data => {
+      if (!Array.isArray(data.stations) || !data.stations.length ||
+          data.stations.some(station => !station.name || !station.code || !station.timezone)) {
+        throw new Error("Invalid station dataset or missing airport timezones.");
+      }
+      document.querySelector("#stations").replaceChildren(...data.stations.map(station => {
+        const option = document.createElement("option");
+        option.value = `${station.name} (${station.code}) — ${station.country}`;
+        stationLabels.set(option.value, station);
+        stationNames.set(station.name.toLowerCase(), station);
+        stationNames.set(station.code.toLowerCase(), station);
+        return option;
+      }));
+      if (departureInput.value.trim()) selectDepartureTimezone();
+    })
+  ]);
+  const failures = lists.filter(result => result.status === "rejected");
+  if (failures.length) {
+    error.textContent = `Dropdown data unavailable: ${failures.map(result => result.reason.message).join(" ")} Enter the exact station and timezone manually.`;
+  }
+  if (!["127.0.0.1", "localhost"].includes(location.hostname)) {
+    document.querySelector("#status").textContent = "Hosted form only";
+    document.querySelector("#message").textContent = "Airport and timezone selection works here. Scheduled retrieval and the browser preview require the local Python app at http://127.0.0.1:8766; this static deployment does not run browser automation.";
+    document.querySelector("#preview-message").textContent = "Controlled-browser preview is available in the local app only.";
+    updateButtons();
+    return;
+  }
   try {
     const config = await request("/api/config");
     token = config.token;
     refreshPreview();
-    document.querySelector("#timezones").replaceChildren(...config.timezones.map(zone => {
-      const option = document.createElement("option");
-      option.value = zone;
-      return option;
-    }));
     const poll = async () => {
       try {
         const remote = await request("/api/status");
@@ -141,22 +172,10 @@ async function start() {
       setTimeout(poll, 250);
     };
     await poll();
-    try {
-      const data = await request("/api/stations");
-      document.querySelector("#stations").replaceChildren(...data.stations.map(station => {
-        const option = document.createElement("option");
-        option.value = `${station.name} (${station.code}) — ${station.country}`;
-        stationLabels.set(option.value, station);
-        stationNames.set(station.name.toLowerCase(), station);
-        stationNames.set(station.code.toLowerCase(), station);
-        return option;
-      }));
-      if (departureInput.value.trim()) selectDepartureTimezone();
-    } catch (problem) {
-      error.textContent = `Departure suggestions unavailable: ${problem.message}. Enter the exact ChopeMySeat label and airport timezone manually.`;
-    }
   } catch (problem) {
-    error.textContent = problem.message;
+    document.querySelector("#status").textContent = "Automation unavailable";
+    document.querySelector("#message").textContent = `Local automation service unavailable: ${problem.message}. Airport and timezone lists are independent; start the Python app to schedule retrieval.`;
+    updateButtons();
   }
 }
 

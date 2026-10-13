@@ -66,6 +66,20 @@ Timing depends on the OS/browser/network; exact delivery to Scoot is not guarant
 
 ## Current integration limitation
 
+### Static Cloudflare hosting
+
+Airport suggestions and timezone options load independently from `stations.json`
+and `timezones.json`, with airport timezone mappings bundled in the station data.
+Include both JSON files alongside `index.html`, `app.js`, and `style.css` in the
+published static directory. No Python API is needed for these dropdowns.
+
+A static Cloudflare deployment does **not** run the Python/Playwright scheduler.
+The hosted page explicitly displays "Hosted form only" and disables automation
+controls instead of suggesting that retrieval is available. Use the local
+Python app for scheduled clicks and the controlled-browser preview. A remote
+automation backend would require a separate architecture, authentication, and
+secure handling of booking data; it is not provided by static hosting.
+
 The live site redirected to maintenance during development. Form selectors are
 based on the supplied screenshot (PNR, Departing, Retrieve Booking), with local
 fixture tests, not a verified live DOM. Uniqueness, selected station, PNR and
