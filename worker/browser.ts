@@ -1,5 +1,5 @@
 import puppeteer, { type Browser, type Page } from "@cloudflare/puppeteer";
-import { type Booking, resultStatus } from "./rules";
+import { type Booking, assertSiteAvailable, resultStatus } from "./rules";
 
 export const SITE = "https://chopemyseat.flyscoot.com/";
 
@@ -16,6 +16,7 @@ export async function browserPage(browser: Browser): Promise<Page> {
 }
 
 export async function checkForm(page: Page, booking?: Booking) {
+  assertSiteAvailable(await page.$eval("body", el => el.innerText));
   return page.evaluate((input) => {
     const visible = (el: Element) => el.getClientRects().length > 0;
     const label = (el: Element) => {
@@ -23,8 +24,6 @@ export async function checkForm(page: Page, booking?: Booking) {
       const associated = id ? [...document.querySelectorAll("label")].find(l => l.htmlFor === id)?.textContent : "";
       return el.getAttribute("aria-label") || associated || el.closest("label")?.textContent || "";
     };
-    const body = document.body.innerText;
-    if (/ChopeMySeat.{0,30}temporarily unavailable|currently under maintenance/i.test(body)) throw new Error("Scoot is under maintenance. No retrieval.");
     const texts = [...document.querySelectorAll<HTMLInputElement>('input:not([type]), input[type=text]')].filter(visible);
     const namedPnr = texts.filter(el => /Booking Reference|PNR/i.test(label(el)));
     const pnr = namedPnr.length === 1 ? namedPnr[0] : texts.length === 1 ? texts[0] : null;
@@ -50,8 +49,9 @@ export async function checkForm(page: Page, booking?: Booking) {
 }
 
 export async function prepareForm(page: Page, booking: Booking) {
-  await page.goto(SITE, { waitUntil: "domcontentloaded", timeout: 20000 });
-  await page.waitForFunction(() => /Retrieve Booking|temporarily unavailable/i.test(document.body.innerText), { timeout: 10000 });
+  const response = await page.goto(SITE, { waitUntil: "domcontentloaded", timeout: 20000 });
+  assertSiteAvailable(await page.$eval("body", el => el.innerText), response?.status());
+  await page.waitForFunction(() => /Retrieve Booking|temporarily unavailable|currently under maintenance|^\s*Access Denied\s*$|You don['\u2019]t have permission to access/im.test(document.body.innerText), { timeout: 10000 });
   const tag = await checkForm(page);
   await page.$eval('[data-chope-field=pnr]', (el, value) => {
     if (!(el instanceof HTMLInputElement)) throw new Error("PNR is not an input.");

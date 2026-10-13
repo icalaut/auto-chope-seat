@@ -189,6 +189,15 @@ deployment.
 
 ## Current live integration limitation
 
+An observed cloud-browser session received an airline-side **Access Denied**
+page instead of the booking form. This is distinct from the app's Cloudflare
+Access sign-in. The app detects HTTP 403 and explicit denial text and stops;
+it does not bypass the airline's restriction or automatically retry.
+The exact cause (network/IP, browser policy, or another airline rule) is not
+established by that page. While blocked, cloud retrieval is unavailable.
+Use the official site in your own browser or contact Scoot about supported
+access. A working app login does not guarantee the remote browser can reach Scoot.
+
 ### Static Cloudflare hosting
 
 Airport suggestions and timezone options load independently from `stations.json`

@@ -7,6 +7,16 @@ export interface Booking {
   timezone: string;
 }
 
+export function assertSiteAvailable(text: string, status?: number): void {
+  if (status === 403 || /^\s*Access Denied\s*$/im.test(text) ||
+      /You don['\u2019]t have permission to access/i.test(text)) {
+    throw new Error("Scoot denied access to this browser. Cloud retrieval is unavailable while this restriction remains. Use the official site in your own browser or contact Scoot; the app will not bypass the restriction.");
+  }
+  if (/ChopeMySeat.{0,30}temporarily unavailable|currently under maintenance/i.test(text)) {
+    throw new Error("Scoot is under maintenance. No retrieval.");
+  }
+}
+
 export function validateBooking(data: Record<string, unknown>): Booking {
   const pnr = String(data.pnr ?? "").trim().toUpperCase();
   const departure = String(data.departure ?? "").trim();
@@ -43,6 +53,7 @@ export function scheduleTime(data: Record<string, unknown>, now = Date.now()): n
 }
 
 export function resultStatus(text: string): { status: string; message: string } {
+  assertSiteAvailable(text);
   const queues = [...new Set([...text.matchAll(/\bQueue\s*:\s*([A-Z]+-\d+|\d+)\b/gi)].map(m => m[1]))];
   if (queues.length) return { status: "airport_queue", message: `Queue: ${queues.join(", ")}. Attend the airport staff-travel counter in person. Automation has stopped; no retries or confirmed seat.` };
   if (/^\s*(?:unsuccessful\s+(?:staff\s+)?web\s+check[- ]?in|(?:staff\s+)?web\s+check[- ]?in\s+(?:is\s+|was\s+)?unsuccessful)\b/im.test(text)) {

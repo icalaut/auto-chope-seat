@@ -1,11 +1,23 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import stations from "../stations.json";
-import { mayDispatch, resultStatus, scheduleTime, seal, unseal, validateBooking } from "../worker/rules";
+import { assertSiteAvailable, mayDispatch, resultStatus, scheduleTime, seal, unseal, validateBooking } from "../worker/rules";
 
 const booking = { pnr: "ABC123", departure: "Singapore", timezone: "Asia/Singapore" };
 const secret = btoa("k".repeat(32));
 
+test("airline access denial and maintenance stop explicitly, never treated as a booking result", () => {
+  const denial = 'Access Denied\nYou don\'t have permission to access "http://chopemyseat.flyscoot.com/" on this server.';
+  for (const text of [denial, "Access Denied", "You don\u2019t have permission to access this site"]) {
+    assert.throws(() => assertSiteAvailable(text), /Scoot denied access/);
+    assert.throws(() => resultStatus(text), /Scoot denied access/);
+  }
+  assert.throws(() => assertSiteAvailable("", 403), /Scoot denied access/);
+  assert.throws(() => assertSiteAvailable("ChopeMySeat is temporarily unavailable"), /maintenance/);
+  assert.throws(() => assertSiteAvailable("Currently under maintenance"), /maintenance/);
+  assert.doesNotThrow(() => assertSiteAvailable("Booking Reference\nDeparting\nRetrieve Booking", 200));
+  assert.doesNotThrow(() => assertSiteAvailable("If you see Access Denied, contact support."));
+});
 test("booking normalization and all bundled airport timezone mappings", () => {
   assert.deepEqual(validateBooking({ ...booking, pnr: " abc123 " }), booking);
   for (const station of stations.stations) {
