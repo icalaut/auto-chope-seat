@@ -47,9 +47,18 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(request);
-    if (!/^[a-z0-9-]+\.cloudflareaccess\.com$/.test(env.ACCESS_TEAM_DOMAIN) || !env.ACCESS_AUD ||
-        !/^[A-Za-z0-9+/]{43}=$/.test(env.BOOKING_KEY ?? "")) {
-      return json({ mode: "cloud", error: "Hosted automation setup incomplete: configure Cloudflare Access and a 32-byte BOOKING_KEY secret." }, 503);
+    const setupErrors: string[] = [];
+    if (!env.ACCESS_TEAM_DOMAIN) setupErrors.push("ACCESS_TEAM_DOMAIN is missing");
+    else if (!/^[a-z0-9-]+\.cloudflareaccess\.com$/.test(env.ACCESS_TEAM_DOMAIN)) {
+      setupErrors.push("ACCESS_TEAM_DOMAIN must be your team hostname without https:// or a trailing slash");
+    }
+    if (!env.ACCESS_AUD?.trim()) setupErrors.push("ACCESS_AUD is missing");
+    if (!env.BOOKING_KEY) setupErrors.push("BOOKING_KEY secret is missing");
+    else if (!/^[A-Za-z0-9+/]{43}=$/.test(env.BOOKING_KEY)) {
+      setupErrors.push("BOOKING_KEY must be one base64-encoded 32-byte key (44 characters, no spaces or newlines)");
+    }
+    if (setupErrors.length) {
+      return json({ mode: "cloud", error: `Hosted automation setup incomplete: ${setupErrors.join("; ")}. Set runtime Variables and Secrets, not build variables, then Deploy.` }, 503);
     }
     let user: string;
     try {

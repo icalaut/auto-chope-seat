@@ -11,9 +11,6 @@
     "bindings": [{ "name": "BOOKINGS", "class_name": "BookingScheduler" }]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["BookingScheduler"] }],
-  "vars": {
-    "ACCESS_TEAM_DOMAIN": "",
-    "ACCESS_AUD": ""
-  },
+  "keep_vars": true,
   "observability": { "enabled": false }
 }

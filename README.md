@@ -84,11 +84,16 @@ Node.js 22.15+ is required for the hosted test harness; use a current Node 22 LT
    protect a custom hostname with an Access self-hosted application.
    Create an **Allow** policy limited to your email/approved users, not a public
    Bypass policy. The Worker independently verifies signed Access JWTs.
-4. In `wrangler.jsonc`, set `ACCESS_TEAM_DOMAIN` to your complete team hostname
+4. Under Worker **Settings > Variables and Secrets**, add a **Text** runtime
+   variable `ACCESS_TEAM_DOMAIN` containing your complete team hostname
    (e.g. `your-team.cloudflareaccess.com`, without `https://`) and `ACCESS_AUD`
    to that Access application's Audience (AUD) tag. These are identifiers,
-   not authentication secrets. They must match the application protecting this
-   hostname. Unset or mismatched configuration fails closed.
+   not authentication secrets. Add `ACCESS_AUD` as a **Text** variable too,
+   then select **Deploy**. They must match the application protecting this
+   hostname. Do not put them only in build variables. Unset or mismatched
+   configuration fails closed. `keep_vars: true` preserves these dashboard-managed
+   runtime variables on subsequent Wrangler deployments; no empty `vars`
+   placeholders are shipped to overwrite them.
 5. Create and upload an encryption secret without printing it or saving it:
 
    ```sh
@@ -111,8 +116,8 @@ Node.js 22.15+ is required for the hosted test harness; use a current Node 22 LT
    to contact Scoot. Verify the actual browser preview before scheduling.
 
 No cloud deployment or live airline submission is part of the test suite.
-The initial configuration intentionally contains empty Access identifiers;
-you must supply your own. Browser sign-in is required only for deployment;
+The initial configuration intentionally omits Access identifiers;
+you must supply your own runtime variables. Browser sign-in is required only for deployment;
 visitors authenticate separately through Access.
 
 ### Hosted behavior and limits

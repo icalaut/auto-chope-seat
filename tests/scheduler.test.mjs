@@ -146,6 +146,25 @@ test("Worker fails closed without setup or without a verified Access JWT", async
   assert.equal((await worker.fetch(fake, env)).status, 401);
 });
 
+test("setup diagnostics identify invalid runtime settings without exposing values", async () => {
+  const request = new Request("https://app.example/api/config");
+  const configured = { ACCESS_TEAM_DOMAIN: "example.cloudflareaccess.com", ACCESS_AUD: "audience", BOOKING_KEY: secret };
+  for (const [field, value, expected] of [
+    ["ACCESS_TEAM_DOMAIN", "", "ACCESS_TEAM_DOMAIN is missing"],
+    ["ACCESS_TEAM_DOMAIN", "https://example.cloudflareaccess.com/", "without https://"],
+    ["ACCESS_AUD", " ", "ACCESS_AUD is missing"],
+    ["BOOKING_KEY", "", "BOOKING_KEY secret is missing"],
+    ["BOOKING_KEY", "private-invalid-key", "44 characters"]
+  ]) {
+    const response = await worker.fetch(request, { ...configured, [field]: value });
+    assert.equal(response.status, 503);
+    const { error } = await response.json();
+    assert.ok(error.includes(expected));
+    assert.ok(!error.includes(secret));
+    assert.ok(!error.includes("private-invalid-key"));
+  }
+});
+
 test("verified Access identity isolation, origin guard and wrong/expired audience rejection", async () => {
   const { publicKey, privateKey } = await generateKeyPair("RS256");
   const key = { ...await exportJWK(publicKey), kid: "fixture-key", use: "sig", alg: "RS256" };
