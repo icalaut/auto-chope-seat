@@ -101,10 +101,12 @@ Node.js 22.15+ is required for the hosted test harness; use a current Node 22 LT
 6. Confirm your Cloudflare account supports Browser Run and SQLite Durable
    Objects and review its quotas/billing. `wrangler.jsonc` supplies `BROWSER`,
    `BOOKINGS`, the `v1` SQLite migration, and the `ASSETS` binding.
-7. Run `npm run deploy`. It builds the five public assets and deploys the actual
-   Worker entrypoint, not just the static directory. For Cloudflare Git builds,
-   use `npm run build` as build command and `npx wrangler deploy` as deploy
-   command. Deploying only `dist` is insufficient.
+7. Run `npm run deploy` or `npx wrangler deploy`. Wrangler's configured build
+   hook runs `npm run build` automatically to create `dist` before validating
+   and uploading the five public assets and actual Worker entrypoint.
+   For Cloudflare Git builds, leave the separate build command empty and use
+   `npx wrangler deploy` as deploy command; the hook handles the asset build.
+   Deploying only `dist` is insufficient.
 8. Open your Access-protected URL and sign in. Prepare a booking only when ready
    to contact Scoot. Verify the actual browser preview before scheduling.
 

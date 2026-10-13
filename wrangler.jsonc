@@ -4,6 +4,7 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-10-13",
   "compatibility_flags": ["nodejs_compat"],
+  "build": { "command": "npm run build" },
   "assets": { "directory": "./dist", "binding": "ASSETS", "run_worker_first": true },
   "browser": { "binding": "BROWSER" },
   "durable_objects": {
