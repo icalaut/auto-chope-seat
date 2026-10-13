@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>auto-chope-seat</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>auto-chope-seat</h1>
+    <p>Prepare your Scoot booking and schedule one <strong>Retrieve Booking</strong> click.</p>
+    <aside>Live integration is not yet verified: Scoot was under maintenance during development.
+      The app stops if it cannot identify or verify the form. It does not bypass maintenance,
+      CAPTCHA, queues, or check-in opening times.</aside>
+    <form id="booking" autocomplete="off">
+      <label>Booking reference (PNR)<input name="pnr" minlength="6" maxlength="6" pattern="[A-Za-z0-9]{6}" required spellcheck="false"></label>
+      <label>Departing airport / station<input name="departure" list="stations" placeholder="Search station name or airport code" maxlength="100" required><datalist id="stations"></datalist></label>
+      <label>Departure airport timezone<input name="timezone" list="timezones" placeholder="e.g. Asia/Singapore" required><datalist id="timezones"></datalist></label>
+      <p class="hint" id="timezone-note">Timezone is automatically selected from the departure station. For an unrecognized station, select its airport timezone manually. IANA zones account for daylight saving time.</p>
+      <div class="row">
+        <label>Retrieval date (airport local time)<input name="date" type="date" required></label>
+        <label>Retrieval time (HH:mm:ss)<input name="time" type="text" placeholder="22:00:00" pattern="[0-9]{2}:[0-9]{2}:[0-9]{2}" required></label>
+      </div>
+      <div class="actions">
+        <button id="prepare" type="button" disabled>1. Prepare browser</button>
+        <button id="schedule" type="submit" disabled>2. Schedule retrieval</button>
+        <button id="cancel" type="button" disabled>Cancel</button>
+      </div>
+    </form>
+    <section aria-live="polite"><h2 id="status">Connecting…</h2><p id="message"></p><p id="countdown"></p><p id="error" role="alert"></p></section>
+    <section aria-labelledby="preview-heading">
+      <h2 id="preview-heading">Scoot controlled-browser preview</h2>
+      <p class="hint">Read-only view of the actual automated browser, not a separate booking session.
+        Updates about once a second and pauses near the scheduled click. After retrieval, the
+        same browser's result tab is brought forward for your manual steps.</p>
+      <button id="show-browser" type="button" disabled>Show Scoot browser / result tab</button>
+      <p id="preview-message" role="status">Loading browser preview…</p>
+      <img id="browser-preview" alt="Live view of the controlled Scoot browser" hidden>
+    </section>
+    <p class="hint">Use only one device for this booking. Keep the terminal, browser and computer awake.
+      Network and browser delays mean exact server receipt time cannot be guaranteed. Missed clicks over two seconds late are stopped.</p>
+    <p class="hint">If Scoot assigns a queue or reports unsuccessful web check-in, automation stops.
+      Attend the airport staff-travel counter in person to queue and wait as instructed.
+      The app never retries, refreshes, or performs further check-in actions after retrieval.</p>
+    <p class="hint">PNR is held in memory only and sent to Scoot when you prepare the browser.
+      No booking data is saved to files or browser storage. Retrieve Booking does not reserve or confirm a seat;
+      review the result yourself. Closing the terminal cancels pending work.</p>
+  </main>
+</body>
+</html>

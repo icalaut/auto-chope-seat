@@ -1,0 +1,1377 @@
+{
+  "source": "https://www.flyscoot.com/en",
+  "source_field": "From departure picker",
+  "extracted_on": "2026-10-13",
+  "stations": [
+    {
+      "name": "Singapore",
+      "country": "Singapore",
+      "code": "SIN"
+    },
+    {
+      "name": "Melbourne",
+      "country": "Australia",
+      "code": "MEL"
+    },
+    {
+      "name": "Perth",
+      "country": "Australia",
+      "code": "PER"
+    },
+    {
+      "name": "Sydney",
+      "country": "Australia",
+      "code": "SYD"
+    },
+    {
+      "name": "Vienna",
+      "country": "Austria",
+      "code": "VIE"
+    },
+    {
+      "name": "Changsha",
+      "country": "China",
+      "code": "CSX"
+    },
+    {
+      "name": "Fuzhou",
+      "country": "China",
+      "code": "FOC"
+    },
+    {
+      "name": "Guangzhou",
+      "country": "China",
+      "code": "CAN"
+    },
+    {
+      "name": "Guiyang",
+      "country": "China",
+      "code": "KWE"
+    },
+    {
+      "name": "Haikou",
+      "country": "China",
+      "code": "HAK"
+    },
+    {
+      "name": "Hangzhou",
+      "country": "China",
+      "code": "HGH"
+    },
+    {
+      "name": "Kunming",
+      "country": "China",
+      "code": "KMG"
+    },
+    {
+      "name": "Nanjing",
+      "country": "China",
+      "code": "NKG"
+    },
+    {
+      "name": "Nanning",
+      "country": "China",
+      "code": "NNG"
+    },
+    {
+      "name": "Qingdao",
+      "country": "China",
+      "code": "TAO"
+    },
+    {
+      "name": "Shantou (Jieyang Chaoshan)",
+      "country": "China",
+      "code": "SWA"
+    },
+    {
+      "name": "Shenyang",
+      "country": "China",
+      "code": "SHE"
+    },
+    {
+      "name": "Tianjin",
+      "country": "China",
+      "code": "TSN"
+    },
+    {
+      "name": "Wuhan",
+      "country": "China",
+      "code": "WUH"
+    },
+    {
+      "name": "Xi'an",
+      "country": "China",
+      "code": "XIY"
+    },
+    {
+      "name": "Zhengzhou",
+      "country": "China",
+      "code": "CGO"
+    },
+    {
+      "name": "Athens",
+      "country": "Greece",
+      "code": "ATH"
+    },
+    {
+      "name": "Hong Kong",
+      "country": "Hong Kong SAR, China",
+      "code": "HKG"
+    },
+    {
+      "name": "Amritsar",
+      "country": "India",
+      "code": "ATQ"
+    },
+    {
+      "name": "Chennai",
+      "country": "India",
+      "code": "MAA"
+    },
+    {
+      "name": "Coimbatore",
+      "country": "India",
+      "code": "CJB"
+    },
+    {
+      "name": "Thiruvananthapuram",
+      "country": "India",
+      "code": "TRV"
+    },
+    {
+      "name": "Tiruchirappalli (Trichy)",
+      "country": "India",
+      "code": "TRZ"
+    },
+    {
+      "name": "Visakhapatnam",
+      "country": "India",
+      "code": "VTZ"
+    },
+    {
+      "name": "Balikpapan",
+      "country": "Indonesia",
+      "code": "BPN"
+    },
+    {
+      "name": "Belitung (Tanjung Pandan)",
+      "country": "Indonesia",
+      "code": "TJQ"
+    },
+    {
+      "name": "Denpasar (Bali)",
+      "country": "Indonesia",
+      "code": "DPS"
+    },
+    {
+      "name": "Jakarta",
+      "country": "Indonesia",
+      "code": "CGK"
+    },
+    {
+      "name": "Kertajati",
+      "country": "Indonesia",
+      "code": "KJT"
+    },
+    {
+      "name": "Labuan Bajo (Komodo)",
+      "country": "Indonesia",
+      "code": "LBJ"
+    },
+    {
+      "name": "Lombok",
+      "country": "Indonesia",
+      "code": "LOP"
+    },
+    {
+      "name": "Makassar",
+      "country": "Indonesia",
+      "code": "UPG"
+    },
+    {
+      "name": "Manado",
+      "country": "Indonesia",
+      "code": "MDC"
+    },
+    {
+      "name": "Medan",
+      "country": "Indonesia",
+      "code": "KNO"
+    },
+    {
+      "name": "Padang",
+      "country": "Indonesia",
+      "code": "PDG"
+    },
+    {
+      "name": "Palembang",
+      "country": "Indonesia",
+      "code": "PLM"
+    },
+    {
+      "name": "Pekanbaru",
+      "country": "Indonesia",
+      "code": "PKU"
+    },
+    {
+      "name": "Pontianak",
+      "country": "Indonesia",
+      "code": "PNK"
+    },
+    {
+      "name": "Semarang",
+      "country": "Indonesia",
+      "code": "SRG"
+    },
+    {
+      "name": "Surabaya",
+      "country": "Indonesia",
+      "code": "SUB"
+    },
+    {
+      "name": "Yogyakarta",
+      "country": "Indonesia",
+      "code": "YIA"
+    },
+    {
+      "name": "Okinawa",
+      "country": "Japan",
+      "code": "OKA"
+    },
+    {
+      "name": "Osaka",
+      "country": "Japan",
+      "code": "KIX"
+    },
+    {
+      "name": "Sapporo (Hokkaido)",
+      "country": "Japan",
+      "code": "CTS"
+    },
+    {
+      "name": "Tokyo (All Airports)",
+      "country": "Japan",
+      "code": "TYO"
+    },
+    {
+      "name": "Tokyo (Haneda)",
+      "country": "Japan",
+      "code": "HND"
+    },
+    {
+      "name": "Tokyo (Narita)",
+      "country": "Japan",
+      "code": "NRT"
+    },
+    {
+      "name": "Vientiane",
+      "country": "Laos",
+      "code": "VTE"
+    },
+    {
+      "name": "Macau",
+      "country": "Macau SAR, China",
+      "code": "MFM"
+    },
+    {
+      "name": "Ipoh",
+      "country": "Malaysia",
+      "code": "IPH"
+    },
+    {
+      "name": "Kota Bharu",
+      "country": "Malaysia",
+      "code": "KBR"
+    },
+    {
+      "name": "Kota Kinabalu",
+      "country": "Malaysia",
+      "code": "BKI"
+    },
+    {
+      "name": "Kuala Lumpur",
+      "country": "Malaysia",
+      "code": "KUL"
+    },
+    {
+      "name": "Kuantan",
+      "country": "Malaysia",
+      "code": "KUA"
+    },
+    {
+      "name": "Kuching",
+      "country": "Malaysia",
+      "code": "KCH"
+    },
+    {
+      "name": "Langkawi",
+      "country": "Malaysia",
+      "code": "LGK"
+    },
+    {
+      "name": "Malacca (Melaka)",
+      "country": "Malaysia",
+      "code": "MKZ"
+    },
+    {
+      "name": "Miri",
+      "country": "Malaysia",
+      "code": "MYY"
+    },
+    {
+      "name": "Penang",
+      "country": "Malaysia",
+      "code": "PEN"
+    },
+    {
+      "name": "Sibu",
+      "country": "Malaysia",
+      "code": "SBW"
+    },
+    {
+      "name": "Subang",
+      "country": "Malaysia",
+      "code": "SZB"
+    },
+    {
+      "name": "Cebu",
+      "country": "Philippines",
+      "code": "CEB"
+    },
+    {
+      "name": "Clark",
+      "country": "Philippines",
+      "code": "CRK"
+    },
+    {
+      "name": "Davao",
+      "country": "Philippines",
+      "code": "DVO"
+    },
+    {
+      "name": "Iloilo City",
+      "country": "Philippines",
+      "code": "ILO"
+    },
+    {
+      "name": "Manila",
+      "country": "Philippines",
+      "code": "MNL"
+    },
+    {
+      "name": "Jeddah",
+      "country": "Saudi Arabia",
+      "code": "JED"
+    },
+    {
+      "name": "Jeju",
+      "country": "South Korea",
+      "code": "CJU"
+    },
+    {
+      "name": "Seoul",
+      "country": "South Korea",
+      "code": "ICN"
+    },
+    {
+      "name": "Taipei",
+      "country": "Taiwan, China",
+      "code": "TPE"
+    },
+    {
+      "name": "Bangkok (Suvarnabhumi)",
+      "country": "Thailand",
+      "code": "BKK"
+    },
+    {
+      "name": "Chiang Mai",
+      "country": "Thailand",
+      "code": "CNX"
+    },
+    {
+      "name": "Chiang Rai",
+      "country": "Thailand",
+      "code": "CEI"
+    },
+    {
+      "name": "Hat Yai",
+      "country": "Thailand",
+      "code": "HDY"
+    },
+    {
+      "name": "Koh Samui",
+      "country": "Thailand",
+      "code": "USM"
+    },
+    {
+      "name": "Krabi",
+      "country": "Thailand",
+      "code": "KBV"
+    },
+    {
+      "name": "Phuket",
+      "country": "Thailand",
+      "code": "HKT"
+    },
+    {
+      "name": "Da Nang",
+      "country": "Vietnam",
+      "code": "DAD"
+    },
+    {
+      "name": "Hanoi",
+      "country": "Vietnam",
+      "code": "HAN"
+    },
+    {
+      "name": "Ho Chi Minh City",
+      "country": "Vietnam",
+      "code": "SGN"
+    },
+    {
+      "name": "Nha Trang (Cam Ranh)",
+      "country": "Vietnam",
+      "code": "CXR"
+    },
+    {
+      "name": "Phu Quoc",
+      "country": "Vietnam",
+      "code": "PQC"
+    },
+    {
+      "name": "Tirana",
+      "country": "Albania",
+      "code": "TIA"
+    },
+    {
+      "name": "Yerevan",
+      "country": "Armenia",
+      "code": "EVN"
+    },
+    {
+      "name": "Adelaide",
+      "country": "Australia",
+      "code": "ADL"
+    },
+    {
+      "name": "Brisbane",
+      "country": "Australia",
+      "code": "BNE"
+    },
+    {
+      "name": "Cairns",
+      "country": "Australia",
+      "code": "CNS"
+    },
+    {
+      "name": "Canberra",
+      "country": "Australia",
+      "code": "CBR"
+    },
+    {
+      "name": "Darwin",
+      "country": "Australia",
+      "code": "DRW"
+    },
+    {
+      "name": "Hobart",
+      "country": "Australia",
+      "code": "HBA"
+    },
+    {
+      "name": "Launceston",
+      "country": "Australia",
+      "code": "LST"
+    },
+    {
+      "name": "Sunshine Coast",
+      "country": "Australia",
+      "code": "MCY"
+    },
+    {
+      "name": "Bahrain",
+      "country": "Bahrain",
+      "code": "BAH"
+    },
+    {
+      "name": "Dhaka",
+      "country": "Bangladesh",
+      "code": "DAC"
+    },
+    {
+      "name": "Brussels",
+      "country": "Belgium",
+      "code": "BRU"
+    },
+    {
+      "name": "Bandar Seri Begawan",
+      "country": "Brunei Darussalam",
+      "code": "BWN"
+    },
+    {
+      "name": "Sofia",
+      "country": "Bulgaria",
+      "code": "SOF"
+    },
+    {
+      "name": "Phnom Penh",
+      "country": "Cambodia",
+      "code": "PNH"
+    },
+    {
+      "name": "Beijing",
+      "country": "China",
+      "code": "PEK"
+    },
+    {
+      "name": "Chengdu",
+      "country": "China",
+      "code": "CTU"
+    },
+    {
+      "name": "Dalian",
+      "country": "China",
+      "code": "DLC"
+    },
+    {
+      "name": "Daxing",
+      "country": "China",
+      "code": "PKX"
+    },
+    {
+      "name": "Harbin",
+      "country": "China",
+      "code": "HRB"
+    },
+    {
+      "name": "Shanghai",
+      "country": "China",
+      "code": "PVG"
+    },
+    {
+      "name": "Shenzhen",
+      "country": "China",
+      "code": "SZX"
+    },
+    {
+      "name": "Weihai",
+      "country": "China",
+      "code": "WEH"
+    },
+    {
+      "name": "Xiamen",
+      "country": "China",
+      "code": "XMN"
+    },
+    {
+      "name": "Pula",
+      "country": "Croatia",
+      "code": "PUY"
+    },
+    {
+      "name": "Split",
+      "country": "Croatia",
+      "code": "SPU"
+    },
+    {
+      "name": "Larnaca",
+      "country": "Cyprus, Republic of",
+      "code": "LCA"
+    },
+    {
+      "name": "Prague",
+      "country": "Czech Republic",
+      "code": "PRG"
+    },
+    {
+      "name": "Copenhagen",
+      "country": "Denmark",
+      "code": "CPH"
+    },
+    {
+      "name": "Bordeaux",
+      "country": "France",
+      "code": "BOD"
+    },
+    {
+      "name": "Lyon",
+      "country": "France",
+      "code": "LYS"
+    },
+    {
+      "name": "Nice",
+      "country": "France",
+      "code": "NCE"
+    },
+    {
+      "name": "Orly Field",
+      "country": "France",
+      "code": "ORY"
+    },
+    {
+      "name": "Paris",
+      "country": "France",
+      "code": "CDG"
+    },
+    {
+      "name": "Tbilisi",
+      "country": "Georgia",
+      "code": "TBS"
+    },
+    {
+      "name": "Berlin",
+      "country": "Germany",
+      "code": "BER"
+    },
+    {
+      "name": "Dusseldorf",
+      "country": "Germany",
+      "code": "DUS"
+    },
+    {
+      "name": "Frankfurt",
+      "country": "Germany",
+      "code": "FRA"
+    },
+    {
+      "name": "Hamburg",
+      "country": "Germany",
+      "code": "HAM"
+    },
+    {
+      "name": "Munich",
+      "country": "Germany",
+      "code": "MUC"
+    },
+    {
+      "name": "Alexandroupoli",
+      "country": "Greece",
+      "code": "AXD"
+    },
+    {
+      "name": "Astypalaia",
+      "country": "Greece",
+      "code": "JTY"
+    },
+    {
+      "name": "Chania",
+      "country": "Greece",
+      "code": "CHQ"
+    },
+    {
+      "name": "Chios",
+      "country": "Greece",
+      "code": "JKH"
+    },
+    {
+      "name": "Corfu",
+      "country": "Greece",
+      "code": "CFU"
+    },
+    {
+      "name": "Heraklion",
+      "country": "Greece",
+      "code": "HER"
+    },
+    {
+      "name": "Ikaria Island",
+      "country": "Greece",
+      "code": "JIK"
+    },
+    {
+      "name": "Kalymnos",
+      "country": "Greece",
+      "code": "JKL"
+    },
+    {
+      "name": "Karpathos",
+      "country": "Greece",
+      "code": "AOK"
+    },
+    {
+      "name": "Kastoria",
+      "country": "Greece",
+      "code": "KSO"
+    },
+    {
+      "name": "Kefalonia",
+      "country": "Greece",
+      "code": "EFL"
+    },
+    {
+      "name": "Kos",
+      "country": "Greece",
+      "code": "KGS"
+    },
+    {
+      "name": "Kozani",
+      "country": "Greece",
+      "code": "KZI"
+    },
+    {
+      "name": "Kythera",
+      "country": "Greece",
+      "code": "KIT"
+    },
+    {
+      "name": "Lemnos",
+      "country": "Greece",
+      "code": "LXS"
+    },
+    {
+      "name": "Milos",
+      "country": "Greece",
+      "code": "MLO"
+    },
+    {
+      "name": "Mykonos",
+      "country": "Greece",
+      "code": "JMK"
+    },
+    {
+      "name": "Mytilene",
+      "country": "Greece",
+      "code": "MJT"
+    },
+    {
+      "name": "Naxos",
+      "country": "Greece",
+      "code": "JNX"
+    },
+    {
+      "name": "Paros",
+      "country": "Greece",
+      "code": "PAS"
+    },
+    {
+      "name": "Rhodes",
+      "country": "Greece",
+      "code": "RHO"
+    },
+    {
+      "name": "Samos",
+      "country": "Greece",
+      "code": "SMI"
+    },
+    {
+      "name": "Santorini",
+      "country": "Greece",
+      "code": "JTR"
+    },
+    {
+      "name": "Skiathos City",
+      "country": "Greece",
+      "code": "JSI"
+    },
+    {
+      "name": "Syros",
+      "country": "Greece",
+      "code": "JSY"
+    },
+    {
+      "name": "Thessaloniki",
+      "country": "Greece",
+      "code": "SKG"
+    },
+    {
+      "name": "Zakynthos",
+      "country": "Greece",
+      "code": "ZTH"
+    },
+    {
+      "name": "Ahmedabad",
+      "country": "India",
+      "code": "AMD"
+    },
+    {
+      "name": "Bagdogra",
+      "country": "India",
+      "code": "IXB"
+    },
+    {
+      "name": "Bengaluru",
+      "country": "India",
+      "code": "BLR"
+    },
+    {
+      "name": "Bhubaneswar",
+      "country": "India",
+      "code": "BBI"
+    },
+    {
+      "name": "Delhi",
+      "country": "India",
+      "code": "DEL"
+    },
+    {
+      "name": "Ghaziabad",
+      "country": "India",
+      "code": "HDO"
+    },
+    {
+      "name": "Goa",
+      "country": "India",
+      "code": "GOI"
+    },
+    {
+      "name": "Guwahati",
+      "country": "India",
+      "code": "GAU"
+    },
+    {
+      "name": "Kochi",
+      "country": "India",
+      "code": "COK"
+    },
+    {
+      "name": "Kolkata",
+      "country": "India",
+      "code": "CCU"
+    },
+    {
+      "name": "Lucknow",
+      "country": "India",
+      "code": "LKO"
+    },
+    {
+      "name": "Mopa",
+      "country": "India",
+      "code": "GOX"
+    },
+    {
+      "name": "Mumbai",
+      "country": "India",
+      "code": "BOM"
+    },
+    {
+      "name": "Patna",
+      "country": "India",
+      "code": "PAT"
+    },
+    {
+      "name": "Pune",
+      "country": "India",
+      "code": "PNQ"
+    },
+    {
+      "name": "Surat",
+      "country": "India",
+      "code": "STV"
+    },
+    {
+      "name": "Varanasi",
+      "country": "India",
+      "code": "VNS"
+    },
+    {
+      "name": "Vijayawada",
+      "country": "India",
+      "code": "VGA"
+    },
+    {
+      "name": "Ambon City",
+      "country": "Indonesia",
+      "code": "AMQ"
+    },
+    {
+      "name": "Bandar Lampung",
+      "country": "Indonesia",
+      "code": "TKG"
+    },
+    {
+      "name": "Banjarmasin",
+      "country": "Indonesia",
+      "code": "BDJ"
+    },
+    {
+      "name": "Banyuwangi",
+      "country": "Indonesia",
+      "code": "BWX"
+    },
+    {
+      "name": "Berau",
+      "country": "Indonesia",
+      "code": "BEJ"
+    },
+    {
+      "name": "Bima",
+      "country": "Indonesia",
+      "code": "BMU"
+    },
+    {
+      "name": "Jayapura",
+      "country": "Indonesia",
+      "code": "DJJ"
+    },
+    {
+      "name": "Kendari",
+      "country": "Indonesia",
+      "code": "KDI"
+    },
+    {
+      "name": "Kupang",
+      "country": "Indonesia",
+      "code": "KOE"
+    },
+    {
+      "name": "Malang",
+      "country": "Indonesia",
+      "code": "MLG"
+    },
+    {
+      "name": "Palangkaraya",
+      "country": "Indonesia",
+      "code": "PKY"
+    },
+    {
+      "name": "Palu",
+      "country": "Indonesia",
+      "code": "PLW"
+    },
+    {
+      "name": "Samarinda",
+      "country": "Indonesia",
+      "code": "AAP"
+    },
+    {
+      "name": "Sundapura",
+      "country": "Indonesia",
+      "code": "HLP"
+    },
+    {
+      "name": "Surakarta",
+      "country": "Indonesia",
+      "code": "SOC"
+    },
+    {
+      "name": "Tambolaka",
+      "country": "Indonesia",
+      "code": "TMC"
+    },
+    {
+      "name": "Tarakan",
+      "country": "Indonesia",
+      "code": "TRK"
+    },
+    {
+      "name": "Toraja",
+      "country": "Indonesia",
+      "code": "TRT"
+    },
+    {
+      "name": "Catania Fontanarossa",
+      "country": "Italy",
+      "code": "CTA"
+    },
+    {
+      "name": "Milan",
+      "country": "Italy",
+      "code": "MXP"
+    },
+    {
+      "name": "Milan (Linate)",
+      "country": "Italy",
+      "code": "LIN"
+    },
+    {
+      "name": "Naples",
+      "country": "Italy",
+      "code": "NAP"
+    },
+    {
+      "name": "Rome",
+      "country": "Italy",
+      "code": "FCO"
+    },
+    {
+      "name": "Venice Marco Polo",
+      "country": "Italy",
+      "code": "VCE"
+    },
+    {
+      "name": "Akita",
+      "country": "Japan",
+      "code": "AXT"
+    },
+    {
+      "name": "Fukuoka",
+      "country": "Japan",
+      "code": "FUK"
+    },
+    {
+      "name": "Fukushima",
+      "country": "Japan",
+      "code": "FKS"
+    },
+    {
+      "name": "Hakodate",
+      "country": "Japan",
+      "code": "HKD"
+    },
+    {
+      "name": "Hanamaki",
+      "country": "Japan",
+      "code": "HNA"
+    },
+    {
+      "name": "Hiroshima",
+      "country": "Japan",
+      "code": "HIJ"
+    },
+    {
+      "name": "Ishigaki",
+      "country": "Japan",
+      "code": "ISG"
+    },
+    {
+      "name": "Kagoshima",
+      "country": "Japan",
+      "code": "KOJ"
+    },
+    {
+      "name": "Kochi",
+      "country": "Japan",
+      "code": "KCZ"
+    },
+    {
+      "name": "Komatsu",
+      "country": "Japan",
+      "code": "KMQ"
+    },
+    {
+      "name": "Matsuyama",
+      "country": "Japan",
+      "code": "MYJ"
+    },
+    {
+      "name": "Miyazaki",
+      "country": "Japan",
+      "code": "KMI"
+    },
+    {
+      "name": "Nagoya",
+      "country": "Japan",
+      "code": "NGO"
+    },
+    {
+      "name": "Niigata",
+      "country": "Japan",
+      "code": "KIJ"
+    },
+    {
+      "name": "Oita",
+      "country": "Japan",
+      "code": "OIT"
+    },
+    {
+      "name": "Okayama",
+      "country": "Japan",
+      "code": "OKJ"
+    },
+    {
+      "name": "Saga",
+      "country": "Japan",
+      "code": "HSG"
+    },
+    {
+      "name": "Sendai",
+      "country": "Japan",
+      "code": "SDJ"
+    },
+    {
+      "name": "Shizuoka",
+      "country": "Japan",
+      "code": "FSZ"
+    },
+    {
+      "name": "Yonago",
+      "country": "Japan",
+      "code": "YGJ"
+    },
+    {
+      "name": "Tawau",
+      "country": "Malaysia",
+      "code": "TWU"
+    },
+    {
+      "name": "Malé",
+      "country": "Maldives",
+      "code": "MLE"
+    },
+    {
+      "name": "Chinggis Khaan",
+      "country": "Mongolia",
+      "code": "UBN"
+    },
+    {
+      "name": "Mandalay",
+      "country": "Myanmar",
+      "code": "MDL"
+    },
+    {
+      "name": "Yangon",
+      "country": "Myanmar",
+      "code": "RGN"
+    },
+    {
+      "name": "Kathmandu",
+      "country": "Nepal",
+      "code": "KTM"
+    },
+    {
+      "name": "Amsterdam",
+      "country": "Netherlands",
+      "code": "AMS"
+    },
+    {
+      "name": "Auckland",
+      "country": "New Zealand",
+      "code": "AKL"
+    },
+    {
+      "name": "Christchurch",
+      "country": "New Zealand",
+      "code": "CHC"
+    },
+    {
+      "name": "Wellington",
+      "country": "New Zealand",
+      "code": "WLG"
+    },
+    {
+      "name": "Muscat",
+      "country": "Oman",
+      "code": "MCT"
+    },
+    {
+      "name": "Warsaw",
+      "country": "Poland",
+      "code": "WAW"
+    },
+    {
+      "name": "Lisbon",
+      "country": "Portugal",
+      "code": "LIS"
+    },
+    {
+      "name": "Doha",
+      "country": "Qatar",
+      "code": "DOH"
+    },
+    {
+      "name": "Kannur",
+      "country": "Russian Federation",
+      "code": "CNN"
+    },
+    {
+      "name": "Dammam",
+      "country": "Saudi Arabia",
+      "code": "DMM"
+    },
+    {
+      "name": "Cape Town",
+      "country": "South Africa",
+      "code": "CPT"
+    },
+    {
+      "name": "Johannesburg",
+      "country": "South Africa",
+      "code": "JNB"
+    },
+    {
+      "name": "Busan",
+      "country": "South Korea",
+      "code": "PUS"
+    },
+    {
+      "name": "Cheongju",
+      "country": "South Korea",
+      "code": "CJJ"
+    },
+    {
+      "name": "Daegu",
+      "country": "South Korea",
+      "code": "TAE"
+    },
+    {
+      "name": "Gimpo",
+      "country": "South Korea",
+      "code": "GMP"
+    },
+    {
+      "name": "Gwangju",
+      "country": "South Korea",
+      "code": "KWJ"
+    },
+    {
+      "name": "Barcelona",
+      "country": "Spain",
+      "code": "BCN"
+    },
+    {
+      "name": "Madrid",
+      "country": "Spain",
+      "code": "MAD"
+    },
+    {
+      "name": "Malaga",
+      "country": "Spain",
+      "code": "AGP"
+    },
+    {
+      "name": "Palma",
+      "country": "Spain",
+      "code": "PMI"
+    },
+    {
+      "name": "Valencia",
+      "country": "Spain",
+      "code": "VLC"
+    },
+    {
+      "name": "Colombo",
+      "country": "Sri Lanka",
+      "code": "CMB"
+    },
+    {
+      "name": "Basel",
+      "country": "Switzerland",
+      "code": "BSL"
+    },
+    {
+      "name": "Geneva",
+      "country": "Switzerland",
+      "code": "GVA"
+    },
+    {
+      "name": "Zurich",
+      "country": "Switzerland",
+      "code": "ZRH"
+    },
+    {
+      "name": "Kaohsiung",
+      "country": "Taiwan, China",
+      "code": "KHH"
+    },
+    {
+      "name": "Lampang",
+      "country": "Thailand",
+      "code": "LPT"
+    },
+    {
+      "name": "Myitkyina",
+      "country": "Thailand",
+      "code": "HGN"
+    },
+    {
+      "name": "Pattaya",
+      "country": "Thailand",
+      "code": "UTP"
+    },
+    {
+      "name": "Sukhothai",
+      "country": "Thailand",
+      "code": "THS"
+    },
+    {
+      "name": "Trat",
+      "country": "Thailand",
+      "code": "TDX"
+    },
+    {
+      "name": "Dili",
+      "country": "Timor Leste",
+      "code": "DIL"
+    },
+    {
+      "name": "Istanbul",
+      "country": "Turkey",
+      "code": "IST"
+    },
+    {
+      "name": "Abu Dhabi",
+      "country": "United Arab Emirates",
+      "code": "AUH"
+    },
+    {
+      "name": "Dubai",
+      "country": "United Arab Emirates",
+      "code": "DXB"
+    },
+    {
+      "name": "Sharjah",
+      "country": "United Arab Emirates",
+      "code": "SHJ"
+    },
+    {
+      "name": "Birmingham",
+      "country": "United Kingdom",
+      "code": "BHX"
+    },
+    {
+      "name": "Bristol",
+      "country": "United Kingdom",
+      "code": "BRS"
+    },
+    {
+      "name": "Edinburgh",
+      "country": "United Kingdom",
+      "code": "EDI"
+    },
+    {
+      "name": "Glasgow",
+      "country": "United Kingdom",
+      "code": "GLA"
+    },
+    {
+      "name": "London (Gatwick)",
+      "country": "United Kingdom",
+      "code": "LGW"
+    },
+    {
+      "name": "London (Heathrow)",
+      "country": "United Kingdom",
+      "code": "LHR"
+    },
+    {
+      "name": "London (Luton)",
+      "country": "United Kingdom",
+      "code": "LTN"
+    },
+    {
+      "name": "Manchester",
+      "country": "United Kingdom",
+      "code": "MAN"
+    },
+    {
+      "name": "Houston",
+      "country": "United States of America",
+      "code": "IAH"
+    },
+    {
+      "name": "Los Angeles",
+      "country": "United States of America",
+      "code": "LAX"
+    },
+    {
+      "name": "New York",
+      "country": "United States of America",
+      "code": "JFK"
+    },
+    {
+      "name": "New York (Newark)",
+      "country": "United States of America",
+      "code": "EWR"
+    },
+    {
+      "name": "San Francisco",
+      "country": "United States of America",
+      "code": "SFO"
+    },
+    {
+      "name": "Seattle / Tacoma",
+      "country": "United States of America",
+      "code": "SEA"
+    }
+  ]
+}
