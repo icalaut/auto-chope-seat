@@ -32,19 +32,39 @@
     <section aria-live="polite"><h2 id="status">Connecting…</h2><p id="message"></p><p id="countdown"></p><p id="error" role="alert"></p></section>
     <section aria-labelledby="preview-heading">
       <h2 id="preview-heading">Scoot controlled-browser preview</h2>
-      <p class="hint">Read-only view of the actual automated browser, not a separate booking session.
-        Updates about once a second and pauses near the scheduled click. After retrieval, the
-        same browser's result tab is brought forward for your manual steps.</p>
+      <p class="hint" id="preview-help">View of the actual controlled browser, not a separate booking session.
+        Preview pauses near retrieval. After retrieval, continue in the same session manually.</p>
       <button id="show-browser" type="button" disabled>Show Scoot browser / result tab</button>
       <p id="preview-message" role="status">Loading browser preview…</p>
       <img id="browser-preview" alt="Live view of the controlled Scoot browser" hidden>
+      <fieldset id="remote-controls" hidden disabled>
+        <legend>Manual cloud-browser controls</legend>
+        <p class="hint">Available only after retrieval, for the remaining session time. Passport and
+          nationality entries are manual. Actions go to the cloud browser, not a new local tab.
+          Nothing here guarantees boarding; follow Scoot's counter instructions.</p>
+        <label class="toggle"><input id="enable-clicks" type="checkbox">Enable clicks on the preview</label>
+        <label>Text for the focused Scoot field<input id="remote-text" maxlength="500" autocomplete="off" spellcheck="false"></label>
+        <button id="send-text" type="button">Type text into focused field</button>
+        <div class="actions" id="remote-keys">
+          <button type="button" data-key="Tab">Tab</button>
+          <button type="button" data-key="Enter">Enter</button>
+          <button type="button" data-key="ArrowUp">Up</button>
+          <button type="button" data-key="ArrowDown">Down</button>
+          <button type="button" data-key="Backspace">Backspace</button>
+          <button type="button" data-key="Escape">Escape</button>
+          <button type="button" data-scroll="-600">Scroll up</button>
+          <button type="button" data-scroll="600">Scroll down</button>
+        </div>
+      </fieldset>
+      <p id="session-expiry" class="hint"></p>
+      <button id="close-cloud" type="button" hidden disabled>Close cloud session</button>
     </section>
-    <p class="hint">Use only one device for this booking. Keep the terminal, browser and computer awake.
+    <p class="hint" id="runtime-note">Use only one device for this booking. Keep the terminal, browser and computer awake.
       Network and browser delays mean exact server receipt time cannot be guaranteed. Missed clicks over two seconds late are stopped.</p>
     <p class="hint">If Scoot assigns a queue or reports unsuccessful web check-in, automation stops.
       Attend the airport staff-travel counter in person to queue and wait as instructed.
       The app never retries, refreshes, or performs further check-in actions after retrieval.</p>
-    <p class="hint">PNR is held in memory only and sent to Scoot when you prepare the browser.
+    <p class="hint" id="privacy-note">PNR is held in memory only and sent to Scoot when you prepare the browser.
       No booking data is saved to files or browser storage. Retrieve Booking does not reserve or confirm a seat;
       review the result yourself. Closing the terminal cancels pending work.</p>
   </main>

@@ -1,6 +1,6 @@
 # auto-chope-seat
 
-Local, single-device Scoot staff-travel booking retrieval scheduler.
+Local or authenticated Cloudflare Scoot staff-travel booking retrieval scheduler.
 This is independent of the auspicious-date application.
 
 ## Setup and run (macOS)
@@ -64,7 +64,124 @@ Cancel is effective before submission begins; a dispatched click cannot be undon
 Missed clicks over two seconds late are rejected, including after system sleep.
 Timing depends on the OS/browser/network; exact delivery to Scoot is not guaranteed.
 
-## Current integration limitation
+## Hosted Cloudflare application
+
+The hosted backend uses a Worker, Browser Run (Browser Rendering), and one SQLite
+Durable Object per authenticated user. Static assets alone cannot provide the
+preview or scheduled clicks. The frontend probes `/api/config`; missing APIs,
+missing setup, and failed authentication explicitly disable automation without
+affecting the airport/timezone lists.
+
+### Deploy to the existing Worker
+
+Node.js 22.15+ is required for the hosted test harness; use a current Node 22 LTS.
+
+1. Run `npm ci`, `npm run typecheck`, and `npm test`.
+2. Sign in with `npx wrangler login` in your own browser. Do not put Cloudflare
+   API tokens, passwords, booking references, or passport data in Git.
+3. Enable Cloudflare Access for
+   `auto-chope-seat.wenyap68.workers.dev` in the Worker's domain settings, or
+   protect a custom hostname with an Access self-hosted application.
+   Create an **Allow** policy limited to your email/approved users, not a public
+   Bypass policy. The Worker independently verifies signed Access JWTs.
+4. In `wrangler.jsonc`, set `ACCESS_TEAM_DOMAIN` to your complete team hostname
+   (e.g. `your-team.cloudflareaccess.com`, without `https://`) and `ACCESS_AUD`
+   to that Access application's Audience (AUD) tag. These are identifiers,
+   not authentication secrets. They must match the application protecting this
+   hostname. Unset or mismatched configuration fails closed.
+5. Create and upload an encryption secret without printing it or saving it:
+
+   ```sh
+   openssl rand -base64 32 | npx wrangler secret put BOOKING_KEY
+   ```
+
+   If Wrangler asks to create the Worker first, run `npm run deploy` with Access
+   configured, then repeat the secret command. APIs remain disabled without
+   the secret. Do not rotate this key while a booking is pending.
+6. Confirm your Cloudflare account supports Browser Run and SQLite Durable
+   Objects and review its quotas/billing. `wrangler.jsonc` supplies `BROWSER`,
+   `BOOKINGS`, the `v1` SQLite migration, and the `ASSETS` binding.
+7. Run `npm run deploy`. It builds the five public assets and deploys the actual
+   Worker entrypoint, not just the static directory. For Cloudflare Git builds,
+   use `npm run build` as build command and `npx wrangler deploy` as deploy
+   command. Deploying only `dist` is insufficient.
+8. Open your Access-protected URL and sign in. Prepare a booking only when ready
+   to contact Scoot. Verify the actual browser preview before scheduling.
+
+No cloud deployment or live airline submission is part of the test suite.
+The initial configuration intentionally contains empty Access identifiers;
+you must supply your own. Browser sign-in is required only for deployment;
+visitors authenticate separately through Access.
+
+### Hosted behavior and limits
+
+- The same uppercase PNR, exact station, and timezone verification applies.
+  Some public airport names are ambiguous (Kochi is both India and Japan);
+  choose the full country/code suggestion. A bare ambiguous name does not
+  select a timezone. A duplicate live Scoot option is rejected rather than
+  guessed.
+- Scheduling requires a time more than five seconds and at most 24 hours ahead.
+  Airport-local DST gaps and repeated times are rejected. For schedules over
+  five minutes away, the prepared browser is closed and reopened 30 seconds
+  before retrieval. This saves idle browser charges but loses the original
+  session; entries are reverified, and maintenance/form failures stop the job.
+- Durable Object alarms are at-least-once, not exact-second guarantees.
+  A persisted attempt marker precedes the external click. Replayed alarms
+  never click again. An interruption can leave **uncertain** status and possibly
+  no click; review manually instead of assuming success or automatically retrying.
+  Verification or platform delays over two seconds stop retrieval.
+- The queue/unsuccessful rules are unchanged: the automated workflow stops after
+  one retrieval. Nationality, passport and remaining check-in are never
+  autopopulated. Follow Scoot's displayed airport instructions; retrieval does
+  not guarantee a seat or permission to board.
+- Cloud preview updates every five seconds while visible and pauses 15 seconds
+  before retrieval. No live browser means no screenshot; scheduled warm-up
+  restores the preview. Request latency may delay an alarm, in which case the
+  lateness guard prevents a late click.
+- After retrieval, explicit manual controls act on the **same remote session**:
+  enable preview clicks, focus a field, type text, use keys, and scroll.
+  The app uses the newest browser tab if Scoot opens a popup. A cloud session
+  cannot be opened as a normal local tab; copying its URL would lose that session.
+- Sessions expire ten minutes after preparation or retrieval as applicable;
+  a scheduled job sets its cleanup deadline relative to retrieval. Manual
+  activity does not extend this deadline. Use **Close cloud session** to end it
+  sooner, or **Cancel** before retrieval. Provider failures may end it earlier.
+  Cleanup alarms can be delayed by the platform.
+- Cloud jobs continue if the frontend closes. Closing a local terminal has no
+  effect on cloud jobs. Use one device/tab per booking to avoid conflicting
+  manual controls.
+
+Browser Run is metered; even a prepared preview consumes browser session time.
+Check [current limits](https://developers.cloudflare.com/browser-run/limits/)
+and pricing before deployment. The free quota may be insufficient for preparing,
+waiting, and continuing one booking. Platform updates may close browser sessions.
+
+### Hosted privacy
+
+Booking data is encrypted with AES-GCM and a unique nonce before Durable Object
+storage. Ciphertext is removed on cancellation, cleanup, or before a retrieval
+attempt; the encryption key is a Wrangler secret. Browser session identifiers,
+status, schedule and attempt metadata are stored, but result URLs, screenshots
+and manual text are not. Manual text is sent only when explicitly requested and
+cleared from its input immediately. Airline/provider browser storage is outside
+the app's control.
+
+Access JWT signature, issuer, audience, expiry and identity are validated.
+Users have separate Durable Objects. Actions require a per-user token and
+same-origin POST; previews require authentication and that token. API responses
+are uncached, and Worker observability is disabled. Preview images can contain
+personal information; keep your screen private. Never make this API public by
+removing authentication to work around setup errors.
+
+`npm audit` currently reports high-severity transitive issues in Puppeteer's
+browser-download helpers (`extract-zip` and `basic-ftp`). This app connects to
+Cloudflare-managed browsers and does not download/extract browser archives
+through those helpers. No compatible upstream fix was offered for the whole
+chain during validation; do not force an obsolete Puppeteer downgrade or use
+those helpers for untrusted archives. Recheck upstream advisories before
+deployment.
+
+## Current live integration limitation
 
 ### Static Cloudflare hosting
 
@@ -74,11 +191,9 @@ Include both JSON files alongside `index.html`, `app.js`, and `style.css` in the
 published static directory. No Python API is needed for these dropdowns.
 
 A static Cloudflare deployment does **not** run the Python/Playwright scheduler.
-The hosted page explicitly displays "Hosted form only" and disables automation
-controls instead of suggesting that retrieval is available. Use the local
-Python app for scheduled clicks and the controlled-browser preview. A remote
-automation backend would require a separate architecture, authentication, and
-secure handling of booking data; it is not provided by static hosting.
+The hosted page explicitly displays "Hosted automation unavailable" and disables
+automation controls when the Worker API is absent. Deploy the backend described
+above for cloud automation, or use the local Python app.
 
 The live site redirected to maintenance during development. Form selectors are
 based on the supplied screenshot (PNR, Departing, Retrieve Booking), with local
@@ -95,7 +210,7 @@ Use only one device per booking as advised by Scoot. The app does not bypass
 maintenance, access controls, CAPTCHA, queues, or opening-time restrictions.
 It does not automatically select seats, pay, or complete check-in.
 
-## Privacy
+## Local app privacy
 
 The panel below the form shows JPEG captures of the actual controlled browser,
 including filled entries and the result, refreshed about once per second.
@@ -124,3 +239,17 @@ are not written to HTTP access logs.
 ```
 
 Tests use a local synthetic booking form, not the live airline site.
+
+For hosted rules, encryption, authenticated identity isolation, request guards,
+alarm replay/interruption, late clicks and session cleanup:
+
+```sh
+npm run typecheck
+npm test
+npm run build
+npx wrangler deploy --dry-run
+```
+
+Scheduler tests mock the external cloud-browser boundary; the Python suite also
+tests the hosted frontend with synthetic APIs and manual controls. These tests
+do not certify the live Scoot DOM or real Cloudflare scheduling latency.

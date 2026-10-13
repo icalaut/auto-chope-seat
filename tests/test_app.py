@@ -213,7 +213,7 @@ class BrowserTests(unittest.TestCase):
         self.page.route("https://fixture.pages.dev/**", serve)
         self.page.goto("https://fixture.pages.dev/")
         self.page.wait_for_function("document.querySelectorAll('#stations option').length === 274")
-        self.page.wait_for_function("document.querySelector('#status').textContent === 'Hosted form only'")
+        self.page.wait_for_function("document.querySelector('#status').textContent === 'Hosted automation unavailable'")
         self.assertGreater(self.page.locator("#timezones option").count(), 100)
         self.page.locator("[name=departure]").fill("Singapore")
         self.assertEqual(self.page.locator("[name=timezone]").input_value(), "Asia/Singapore")
@@ -221,7 +221,63 @@ class BrowserTests(unittest.TestCase):
         self.assertEqual(self.page.locator("[name=departure]").input_value(), "Sydney")
         self.assertEqual(self.page.locator("[name=timezone]").input_value(), "Australia/Sydney")
         self.assertTrue(self.page.locator("#schedule").is_disabled())
-        self.assertFalse(any(path.startswith("/api/") for path in requests))
+        self.assertEqual([path for path in requests if path.startswith("/api/")], ["/api/config"])
+
+    def test_cloud_frontend_preview_and_manual_controls(self):
+        image = self.page.screenshot(type="jpeg")
+        actions = []
+        status = {"status": "submitted", "message": "Manual review required.", "mode": "cloud",
+                  "manual_available": True, "preview_available": True,
+                  "session_expires": time.time() + 600, "now": time.time(), "target": None}
+
+        def serve(route):
+            from urllib.parse import urlparse
+            path = urlparse(route.request.url).path
+            if path == "/api/config":
+                route.fulfill(json={"token": "fixture-token", "mode": "cloud"})
+            elif path == "/api/status":
+                route.fulfill(json=status)
+            elif path == "/api/preview":
+                self.assertEqual(route.request.headers["x-app-token"], "fixture-token")
+                route.fulfill(body=image, content_type="image/jpeg")
+            elif path == "/api/action":
+                actions.append(route.request.post_data_json)
+                route.fulfill(json=status)
+            else:
+                filename = "index.html" if path == "/" else path.lstrip("/")
+                types = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json"}
+                file = app.ROOT / filename
+                if filename in {"index.html", "app.js", "style.css", "stations.json", "timezones.json"}:
+                    route.fulfill(body=file.read_bytes(), content_type=types[file.suffix])
+                else:
+                    route.fulfill(status=404)
+
+        self.page.route("https://fixture.workers.dev/**", serve)
+        self.page.goto("https://fixture.workers.dev/")
+        self.page.wait_for_function("!document.querySelector('#browser-preview').hidden && !document.querySelector('#remote-controls').disabled")
+        self.assertTrue(self.page.locator("#show-browser").is_hidden())
+        self.assertTrue(self.page.locator("#remote-controls").is_visible())
+        self.assertIn("encrypted", self.page.locator("#privacy-note").inner_text())
+        self.page.locator("[name=departure]").fill("Kochi (KCZ) — Japan")
+        self.assertEqual(self.page.locator("[name=timezone]").input_value(), "Asia/Tokyo")
+        self.page.locator("[name=departure]").fill("Kochi")
+        self.assertEqual(self.page.locator("[name=timezone]").input_value(), "")
+        self.page.locator("#browser-preview").click(position={"x": 20, "y": 20})
+        self.assertEqual(actions, [])
+        self.page.locator("#enable-clicks").check()
+        self.page.locator("#browser-preview").click(position={"x": 20, "y": 20})
+        self.page.wait_for_function("!document.querySelector('#remote-controls').disabled")
+        self.assertEqual(actions[-1]["kind"], "click")
+        self.assertGreater(actions[-1]["x"], 0)
+        self.assertNotIn("pnr", actions[-1])
+        self.page.locator("#remote-text").fill("Synthetic test text")
+        self.page.locator("#send-text").click()
+        self.page.wait_for_function("!document.querySelector('#remote-controls').disabled")
+        self.assertEqual(actions[-1], {"action": "manual", "kind": "type", "text": "Synthetic test text"})
+        self.assertEqual(self.page.locator("#remote-text").input_value(), "")
+        self.page.locator("[data-key=Tab]").click()
+        self.page.wait_for_function("!document.querySelector('#remote-controls').disabled")
+        self.assertEqual(actions[-1]["key"], "Tab")
 
     def test_closed_preview_reports_error_without_submission(self):
         self.page.close()

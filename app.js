@@ -11,6 +11,9 @@ pnrInput.addEventListener("input", () => {
 let token;
 let state;
 let busy = false;
+let mode = "local";
+let previewBusy = false;
+let previewRefresh;
 const stationLabels = new Map();
 const stationNames = new Map();
 const departureInput = form.elements.namedItem("departure");
@@ -41,18 +44,18 @@ timezoneInput.addEventListener("input", () => {
     document.querySelector("#timezone-note").textContent = "Select a valid airport timezone to determine today's local date.";
   }
 });
-function selectDepartureTimezone() {
-  const station = stationNames.get(departureInput.value.trim().toLowerCase());
+function selectDepartureTimezone(selected) {
+  const station = selected || stationNames.get(departureInput.value.trim().toLowerCase());
   timezoneInput.value = station?.timezone || "";
   prefillToday(station?.timezone || undefined);
   document.querySelector("#timezone-note").textContent = station?.timezone
     ? `Automatically selected ${station.timezone} for ${station.name} (${station.code}). Daylight saving is applied for the scheduled date.`
-    : "Station not recognized. Select its airport timezone manually before preparing; no timezone is assumed.";
+    : "Station not recognized or its name is ambiguous. Select a full station suggestion or its airport timezone manually; no timezone is assumed.";
 }
 departureInput.addEventListener("input", () => {
   const station = stationLabels.get(departureInput.value);
   if (station) departureInput.value = station.name;
-  selectDepartureTimezone();
+  selectDepartureTimezone(station);
 });
 
 function updateButtons() {
@@ -61,6 +64,11 @@ function updateButtons() {
   buttons.schedule.disabled = !token || busy || status !== "prepared";
   buttons.cancel.disabled = !token || busy || !["prepared", "scheduled"].includes(status);
   document.querySelector("#show-browser").disabled = !token || busy || ["working", "submitting", "observing"].includes(status);
+  document.querySelector("#remote-controls").disabled = !token || busy || previewBusy || !state?.manual_available;
+  document.querySelector("#close-cloud").disabled = !token || busy || !state?.preview_available ||
+    ["working", "scheduled", "submitting"].includes(status);
+  document.querySelector("#browser-preview").classList.toggle("interactive",
+    mode === "cloud" && state?.manual_available && !busy && !previewBusy && document.querySelector("#enable-clicks").checked);
   for (const input of form.querySelectorAll("input")) {
     input.disabled = busy || ["working", "scheduled", "submitting", "observing"].includes(status);
   }
@@ -68,12 +76,19 @@ function updateButtons() {
 
 async function request(url, options) {
   const response = await fetch(url, options);
+  const contentType = response.headers.get("Content-Type") || "";
+  if (!contentType.includes("application/json")) {
+    throw new Error(response.status === 404 || response.ok
+      ? "Automation API not found. Deploy the Worker backend, not just its static assets."
+      : `Authentication or API unavailable (${response.status}). Open the Access-protected application and sign in.`);
+  }
   const result = await response.json();
+  if (url === "/api/config" && result.mode === "cloud") mode = "cloud";
   if (!response.ok) throw new Error(result.error || `Request failed (${response.status}).`);
   return result;
 }
 
-async function send(action) {
+async function send(action, extra = {}) {
   if (busy) return;
   const fields = Object.fromEntries(new FormData(form));
   if (action === "prepare") {
@@ -88,7 +103,7 @@ async function send(action) {
     await request("/api/action", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-App-Token": token },
-      body: JSON.stringify({ action, ...fields })
+      body: JSON.stringify({ action, ...(action === "manual" || action === "close" ? {} : fields), ...extra })
     });
     state = await request("/api/status");
   } catch (problem) {
@@ -96,12 +111,36 @@ async function send(action) {
   } finally {
     busy = false;
     updateButtons();
+    if (mode === "cloud") {
+      clearTimeout(previewRefresh);
+      refreshPreview();
+    }
   }
 }
 
 buttons.prepare.addEventListener("click", () => send("prepare"));
 buttons.cancel.addEventListener("click", () => send("cancel"));
 document.querySelector("#show-browser").addEventListener("click", () => send("show_browser"));
+document.querySelector("#close-cloud").addEventListener("click", () => send("close"));
+document.querySelector("#enable-clicks").addEventListener("change", updateButtons);
+document.querySelector("#browser-preview").addEventListener("click", event => {
+  if (mode !== "cloud" || !state?.manual_available || busy || previewBusy || !document.querySelector("#enable-clicks").checked) return;
+  const image = event.currentTarget;
+  const rect = image.getBoundingClientRect();
+  const x = (event.clientX - rect.left - image.clientLeft) * 1280 / image.clientWidth;
+  const y = (event.clientY - rect.top - image.clientTop) * 900 / image.clientHeight;
+  if (x >= 0 && x < 1280 && y >= 0 && y < 900) send("manual", { kind: "click", x, y });
+});
+document.querySelector("#send-text").addEventListener("click", () => {
+  const input = document.querySelector("#remote-text");
+  const text = input.value;
+  input.value = "";
+  if (text) send("manual", { kind: "type", text });
+});
+document.querySelector("#remote-keys").addEventListener("click", event => {
+  if (event.target.dataset.key) send("manual", { kind: "key", key: event.target.dataset.key });
+  else if (event.target.dataset.scroll) send("manual", { kind: "scroll", delta: Number(event.target.dataset.scroll) });
+});
 form.addEventListener("submit", event => { event.preventDefault(); send("schedule"); });
 form.addEventListener("input", () => {
   if (state?.status === "prepared") {
@@ -130,7 +169,8 @@ async function start() {
         const option = document.createElement("option");
         option.value = `${station.name} (${station.code}) — ${station.country}`;
         stationLabels.set(option.value, station);
-        stationNames.set(station.name.toLowerCase(), station);
+        const name = station.name.toLowerCase();
+        stationNames.set(name, stationNames.has(name) ? null : station);
         stationNames.set(station.code.toLowerCase(), station);
         return option;
       }));
@@ -141,17 +181,20 @@ async function start() {
   if (failures.length) {
     error.textContent = `Dropdown data unavailable: ${failures.map(result => result.reason.message).join(" ")} Enter the exact station and timezone manually.`;
   }
-  if (!["127.0.0.1", "localhost"].includes(location.hostname)) {
-    document.querySelector("#status").textContent = "Hosted form only";
-    document.querySelector("#message").textContent = "Airport and timezone selection works here. Scheduled retrieval and the browser preview require the local Python app at http://127.0.0.1:8766; this static deployment does not run browser automation.";
-    document.querySelector("#preview-message").textContent = "Controlled-browser preview is available in the local app only.";
-    updateButtons();
-    return;
-  }
+  const local = ["127.0.0.1", "localhost"].includes(location.hostname);
   try {
     const config = await request("/api/config");
+    if (!config.token) throw new Error("Automation service returned no action token.");
+    mode = config.mode === "cloud" ? "cloud" : "local";
     token = config.token;
-    refreshPreview();
+    if (mode === "cloud") {
+      document.querySelector("#show-browser").hidden = true;
+      document.querySelector("#remote-controls").hidden = false;
+      document.querySelector("#close-cloud").hidden = false;
+      document.querySelector("#preview-help").textContent = "Cloud browser preview updates every five seconds while visible. It pauses 15 seconds before retrieval. Use the controls below to continue manually after retrieval; the session cannot be opened as a normal local tab.";
+      document.querySelector("#runtime-note").textContent = "Use only one device per booking. Cloud scheduling can continue while this page is closed. Schedule 5 seconds to 24 hours ahead. A distant schedule reopens the browser 30 seconds before retrieval. Exact timing is not guaranteed; clicks more than two seconds late are stopped.";
+      document.querySelector("#privacy-note").textContent = "PNR is encrypted in Cloudflare Durable Object storage until cancellation, expiry, or the recorded retrieval attempt. Browser sessions expire after ten minutes. Preview and manual text may contain personal data; they are not saved by this app. Cloud browser usage is metered. Close the cloud session when finished.";
+    }
     const poll = async () => {
       try {
         const remote = await request("/api/status");
@@ -162,30 +205,46 @@ async function start() {
           ? "Inputs changed. Prepare the browser again before scheduling." : remote.message;
         document.querySelector("#countdown").textContent = remote.target && remote.status === "scheduled"
           ? `${Math.max(0, remote.target - remote.now).toFixed(1)} seconds remaining` : "";
+        document.querySelector("#session-expiry").textContent = mode === "cloud" && remote.preview_available
+          ? `Cloud session closes at ${new Date(remote.session_expires * 1000).toLocaleTimeString()}.` : "";
         updateButtons();
       } catch (problem) {
         token = null;
-        error.textContent = `Connection lost: ${problem.message}. Pending work may still be running in the terminal.`;
+        error.textContent = `Connection lost: ${problem.message}. Pending work may still be running ${mode === "cloud" ? "in Cloudflare" : "in the terminal"}. Reopen this page to reconnect.`;
         updateButtons();
         return;
       }
-      setTimeout(poll, 250);
+      setTimeout(poll, mode === "cloud" ? 1000 : 250);
     };
     await poll();
+    refreshPreview();
   } catch (problem) {
-    document.querySelector("#status").textContent = "Automation unavailable";
-    document.querySelector("#message").textContent = `Local automation service unavailable: ${problem.message}. Airport and timezone lists are independent; start the Python app to schedule retrieval.`;
+    const hosted = !local || mode === "cloud";
+    document.querySelector("#status").textContent = hosted ? "Hosted automation unavailable" : "Automation unavailable";
+    document.querySelector("#message").textContent = !hosted
+      ? `Local automation service unavailable: ${problem.message}. Airport and timezone lists are independent; start the Python app to schedule retrieval.`
+      : `Airport and timezone lists work independently. ${problem.message}`;
+    document.querySelector("#preview-message").textContent = !hosted
+      ? "Start the local Python app for browser preview."
+      : "Cloud preview requires the deployed Worker backend, Browser Rendering and Cloudflare Access setup.";
     updateButtons();
   }
 }
 
 let previewUrl;
 async function refreshPreview() {
-  if (!token) return;
+  if (!token || previewBusy) return;
+  previewBusy = true;
+  updateButtons();
   const message = document.querySelector("#preview-message");
   try {
-    if (["working", "submitting", "observing"].includes(state?.status) ||
-        (state?.status === "scheduled" && state.target - state.now <= 3)) {
+    if (mode === "cloud" && !state?.preview_available) {
+      document.querySelector("#browser-preview").hidden = true;
+      message.textContent = state?.status === "scheduled" ? "Browser preview resumes during scheduled warm-up." : "Prepare the cloud browser to see its preview.";
+    } else if (mode === "cloud" && document.hidden) {
+      message.textContent = "Preview paused while this page is hidden.";
+    } else if (busy || ["working", "submitting", "observing"].includes(state?.status) ||
+        (state?.status === "scheduled" && state.target - state.now <= (mode === "cloud" ? 15 : 3))) {
       message.textContent = "Preview paused to prioritize the booking action.";
     } else {
       const response = await fetch("/api/preview", { headers: { "X-App-Token": token } });
@@ -199,13 +258,18 @@ async function refreshPreview() {
       image.src = previewUrl;
       image.hidden = false;
       if (previous) URL.revokeObjectURL(previous);
-      message.textContent = state?.preview_error || (state?.preview_time
+      message.textContent = mode === "cloud" ? `Cloud preview captured ${new Date().toLocaleTimeString()}.` : state?.preview_error || (state?.preview_time
         ? `Preview captured ${new Date(state.preview_time * 1000).toLocaleTimeString()}.`
         : "Waiting for the first browser capture.");
     }
   } catch (problem) {
     message.textContent = problem.message;
+    if (mode === "cloud") document.querySelector("#browser-preview").hidden = true;
+  } finally {
+    previewBusy = false;
+    updateButtons();
   }
-  setTimeout(refreshPreview, 1000);
+  clearTimeout(previewRefresh);
+  previewRefresh = setTimeout(refreshPreview, mode === "cloud" ? 5000 : 1000);
 }
 start();
