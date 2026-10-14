@@ -80,7 +80,7 @@ server and cancels any pending retrieval (refused while a click is in progress).
    macOS `caffeinate` prevents idle sleep (keep the laptop plugged in and the
    lid open — closing the lid still sleeps the Mac).
 6. At the retrieval time the app clicks **Retrieve Booking once**, then reads visible result text for
-   up to five seconds without clicking or refreshing. If Scoot is slow to
+   up to 30 seconds without clicking or refreshing. If Scoot is slow to
    acknowledge the click, it is still treated as sent and never repeated. A displayed queue number
    (e.g. `Queue: TRY-1`) produces an `airport_queue` status: stop and attend the
    airport staff-travel counter in person to queue and wait. An explicit

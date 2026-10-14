@@ -31,6 +31,7 @@ PREPARE_LEAD = 300
 RETRY_INTERVAL = 30
 RETRY_CUTOFF = 60
 CLICK_TIMEOUT_MS = 10000
+RESULT_WATCH = 30
 MIN_SCHEDULE_LEAD = 90
 HEADLESS = False
 KEEP_AWAKE = True
@@ -254,10 +255,14 @@ class BookingForm:
             raise ValueError("Retrieve Booking is not available. No click was made.")
         return button
 
-    def observe_result(self, timeout: float = 5.0, stop: threading.Event | None = None) -> dict:
-        deadline = time.monotonic() + timeout
+    def observe_result(self, timeout: float | None = None, stop: threading.Event | None = None) -> dict:
+        deadline = time.monotonic() + (RESULT_WATCH if timeout is None else timeout)
         while True:
-            text = self.page.locator("body").inner_text(timeout=1500)
+            try:
+                text = self.page.locator("body").inner_text(timeout=2000)
+            except Exception:
+                # The page may still be busy or navigating after the click; keep reading until the deadline.
+                text = ""
             queues = list(dict.fromkeys(re.findall(r"\bQueue\s*:\s*([A-Z]+-\d+|\d+)\b", text, re.I)))
             if queues:
                 return {"status": "airport_queue",
@@ -268,7 +273,7 @@ class BookingForm:
             if time.monotonic() >= deadline or (stop is not None and stop.is_set()):
                 return {"status": "submitted",
                         "message": "Retrieve Booking was clicked once. No recognized queue or failure result was detected during the brief read-only check. Review the Scoot browser yourself; no further actions or retries will be made, and no seat/check-in success is inferred."}
-            self.page.wait_for_timeout(100)
+            time.sleep(0.1)
 
 
 class Controller:
@@ -432,10 +437,15 @@ class Controller:
             if "performing click action" not in str(error):
                 raise
         self.update("observing", "Retrieve Booking was clicked once. Reading the result only; no further clicks will be made.")
-        self.page.wait_for_timeout(100)
-        page = self.visible_page()
-        page.bring_to_front()
-        outcome = BookingForm(page).observe_result(stop=self.stop)
+        try:
+            self.page.wait_for_timeout(100)
+            page = self.visible_page()
+            page.bring_to_front()
+            outcome = BookingForm(page).observe_result(stop=self.stop)
+        except Exception as error:
+            outcome = {"status": "submitted",
+                       "message": f"Retrieve Booking was clicked once, but the result could not be read ({type(error).__name__}). "
+                                  "Review the Scoot browser yourself; no further actions or retries will be made."}
         self.update(outcome["status"], outcome["message"])
 
     def scheduled_message(self, job: dict) -> str:

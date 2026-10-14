@@ -438,6 +438,7 @@ class SchedulerTests(unittest.TestCase):
         self.maintenance_loads = 0
         self.hang_assets = False
         self.busy_click = False
+        self.busy_result = False
         self.release = threading.Event()
         test = self
 
@@ -460,6 +461,8 @@ class SchedulerTests(unittest.TestCase):
                         content = FORM.replace('window.clicks=(window.clicks||0)+1', "fetch('/clicked')")
                         if test.busy_click:
                             content = content.replace("fetch('/clicked')", "fetch('/clicked');const t=Date.now();while(Date.now()-t<2500);")
+                        if test.busy_result:
+                            content = content.replace("fetch('/clicked')", "fetch('/clicked');const t=Date.now();while(Date.now()-t<4000);document.body.append('Queue: TRY-1');")
                         if test.hang_assets:
                             content += '<img src="/hang">'
                         content = content.encode()
@@ -480,6 +483,7 @@ class SchedulerTests(unittest.TestCase):
             patch.object(app, "HEADLESS", True),
             patch.object(app, "KEEP_AWAKE", False),
             patch.object(app, "USE_DEFAULT_BROWSER", False),
+            patch.object(app, "RESULT_WATCH", 8),
         ]
         for item in self.patches:
             item.start()
@@ -505,6 +509,14 @@ class SchedulerTests(unittest.TestCase):
         time.sleep(0.3)
         self.assertEqual(len(self.clicks), 1)
         self.assertGreaterEqual(self.clicks[0], due)
+
+    def test_busy_result_page_is_reread_until_readable(self):
+        self.busy_result = True
+        with patch.object(app, "CLICK_TIMEOUT_MS", 1000):
+            self.schedule()
+            state = self.wait_status("airport_queue", timeout=30)
+        self.assertIn("TRY-1", state["message"])
+        self.assertEqual(len(self.clicks), 1)
 
     def test_slow_page_load_event_does_not_block_preparation(self):
         self.hang_assets = True
