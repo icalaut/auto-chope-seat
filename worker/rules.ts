@@ -59,6 +59,9 @@ export function resultStatus(text: string): { status: string; message: string } 
   if (/^\s*(?:unsuccessful\s+(?:staff\s+)?web\s+check[- ]?in|(?:staff\s+)?web\s+check[- ]?in\s+(?:is\s+|was\s+)?unsuccessful)\b/im.test(text)) {
     return { status: "unsuccessful", message: "Unsuccessful web check-in. Automation has stopped. Follow Scoot's airport counter instructions." };
   }
+  if (/online\s+check[- ]?in\s+is\s+already\s+closed\s+for\s+this\s+flight/i.test(text)) {
+    return { status: "checkin_closed", message: "Scoot says online check-in is already closed for this flight (PNR and departure matched, but the flight is in the past). Automation has stopped; no retries." };
+  }
   if (/online\s+check[- ]?in\s+is\s+not\s+open\s+yet/i.test(text)) {
     const opens = text.match(/for\s+your\s+flight\s+([A-Z0-9]{2}\s*\d{1,4})\s+at\s+(\d{1,2}-\d{1,2}-\d{4}\s+\d{1,2}:\d{2})(?:\s*\(([A-Z]{2,5})\))?/i);
     const when = opens ? `Check-in for flight ${opens[1].toUpperCase()} opens at ${opens[2]}${opens[3] ? ` (${opens[3].toUpperCase()})` : ""}` : "Scoot did not state the opening time";

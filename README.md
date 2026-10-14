@@ -90,6 +90,8 @@ server and cancels any pending retrieval (refused while a click is in progress).
      TR 866 at 10-13-2026 22:00 (SGT)" → `not_open_yet` (PNR and departure are
      correct but it is earlier than 3 hours before departure); the flight and
      opening time are shown so you can schedule a new retrieval for it.
+   - "Online check-in is already closed for this flight." → `checkin_closed`
+     (PNR and departure are correct but the flight is in the past).
    - "Online check-in is currently not available for your booking. Please go to
      the counter." → `pnr_not_found` (the PNR was not found).
    - "Please ensure your Booking Reference (PNR) and Departing station are

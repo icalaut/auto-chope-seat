@@ -33,6 +33,7 @@ RETRY_CUTOFF = 60
 CLICK_TIMEOUT_MS = 10000
 RESULT_WATCH = 30
 PNR_NOT_FOUND = re.compile(r"online\s+check[- ]?in\s+is\s+currently\s+not\s+available\s+for\s+your\s+booking", re.I)
+CHECKIN_CLOSED = re.compile(r"online\s+check[- ]?in\s+is\s+already\s+closed\s+for\s+this\s+flight", re.I)
 NOT_OPEN_YET = re.compile(r"online\s+check[- ]?in\s+is\s+not\s+open\s+yet", re.I)
 NOT_OPEN_DETAIL = re.compile(r"for\s+your\s+flight\s+(?P<flight>[A-Z0-9]{2}\s*\d{1,4})\s+at\s+(?P<when>\d{1,2}-\d{1,2}-\d{4}\s+\d{1,2}:\d{2})(?:\s*\((?P<zone>[A-Z]{2,5})\))?", re.I)
 DEPARTURE_MISMATCH = re.compile(r"ensure\s+your\s+booking\s+reference\s*\(PNR\)\s+and\s+departing\s+station\s+are\s+entered\s+correctly", re.I)
@@ -290,6 +291,9 @@ class BookingForm:
             if re.search(r"^\s*(?:unsuccessful\s+(?:staff\s+)?web\s+check[- ]?in|(?:staff\s+)?web\s+check[- ]?in\s+(?:is\s+|was\s+)?unsuccessful)\b", text, re.I | re.M):
                 return {"status": "unsuccessful",
                         "message": "Scoot reports unsuccessful web check-in. Automation has stopped. Follow the airline's airport counter instructions; no further actions or retries will be made."}
+            if CHECKIN_CLOSED.search(text):
+                return {"status": "checkin_closed",
+                        "message": "Scoot says online check-in is already closed for this flight (PNR and departure matched, but the flight is in the past). Check the booking and date. No further actions or retries will be made."}
             if NOT_OPEN_YET.search(text):
                 return {"status": "not_open_yet", "message": not_open_message(text)}
             if PNR_NOT_FOUND.search(text):

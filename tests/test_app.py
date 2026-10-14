@@ -267,6 +267,13 @@ class BrowserTests(unittest.TestCase):
         self.page.set_content("<h1>Unsuccessful staff web check-in</h1>")
         self.assertEqual(self.form.observe_result(timeout=0)["status"], "unsuccessful")
 
+    def test_checkin_closed_message(self):
+        self.page.set_content("<p>Online check-in is already closed for this flight.</p>" + FORM)
+        outcome = self.form.observe_result(timeout=0)
+        self.assertEqual(outcome["status"], "checkin_closed")
+        self.assertIn("flight is in the past", outcome["message"])
+        self.assertEqual(self.page.evaluate("window.clicks||0"), 0)
+
     def test_not_open_yet_reports_flight_and_opening_time(self):
         self.page.set_content("<p>Online check-in is not open yet! You can start checking in for your flight <b>TR 866</b> at <b>10-13-2026 22:00 (SGT)</b></p>"
                               "<p>*Subject to seats availability.</p>" + FORM)
