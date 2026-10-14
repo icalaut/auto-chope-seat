@@ -12,6 +12,7 @@ let token;
 let state;
 let busy = false;
 let mode = "local";
+let stopped = false;
 let previewBusy = false;
 let previewRefresh;
 const stationLabels = new Map();
@@ -22,19 +23,37 @@ const dateInput = form.elements.namedItem("date");
 const timeInput = form.elements.namedItem("time");
 let dateWasEdited = false;
 let timeWasEdited = false;
+function enforceMinimumDate(today) {
+  dateInput.min = today;
+  if (dateInput.value && dateInput.value < today) dateInput.value = today;
+}
 function prefillToday(timezone = undefined) {
-  if (dateWasEdited && timeWasEdited) return;
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23"
   }).formatToParts(new Date());
   const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-  if (!dateWasEdited) dateInput.value = `${values.year}-${values.month}-${values.day}`;
+  const today = `${values.year}-${values.month}-${values.day}`;
+  enforceMinimumDate(today);
+  if (!dateWasEdited) dateInput.value = today;
   if (!timeWasEdited) timeInput.value = `${values.hour}:${values.minute}:${values.second}`;
 }
 prefillToday();
 dateInput.addEventListener("input", () => { dateWasEdited = true; });
+// Keeps the minimum current when the page stays open past midnight; earlier dates snap to today.
+function refreshMinimumDate() {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezoneInput.value || undefined, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+    const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+    enforceMinimumDate(`${values.year}-${values.month}-${values.day}`);
+  } catch (problem) {
+    if (!(problem instanceof RangeError)) throw problem;
+  }
+}
+dateInput.addEventListener("change", refreshMinimumDate);
+dateInput.addEventListener("focus", refreshMinimumDate);
+setInterval(refreshMinimumDate, 60000);
 timeInput.addEventListener("input", () => { timeWasEdited = true; });
 timezoneInput.addEventListener("input", () => {
   try {
@@ -58,20 +77,46 @@ departureInput.addEventListener("input", () => {
   selectDepartureTimezone(station);
 });
 
+const ACTIVE = ["working", "scheduled", "preparing", "ready", "submitting", "observing"];
 function updateButtons() {
   const status = state?.status;
-  buttons.prepare.disabled = !token || busy || ["working", "scheduled", "submitting", "observing"].includes(status);
-  buttons.schedule.disabled = !token || busy || status !== "prepared";
-  buttons.cancel.disabled = !token || busy || !["prepared", "scheduled"].includes(status);
-  document.querySelector("#show-browser").disabled = !token || busy || ["working", "submitting", "observing"].includes(status);
+  if (mode === "cloud") {
+    buttons.prepare.disabled = !token || busy || ["working", "scheduled", "submitting", "observing"].includes(status);
+    buttons.schedule.disabled = !token || busy || status !== "prepared";
+    buttons.cancel.disabled = !token || busy || !["prepared", "scheduled"].includes(status);
+  } else {
+    buttons.schedule.disabled = !token || busy || ACTIVE.includes(status);
+    buttons.cancel.disabled = !token || busy || !["scheduled", "preparing", "ready"].includes(status);
+  }
+  document.querySelector("#quit").disabled = !token || busy || ["submitting", "observing"].includes(status);
+  document.querySelector("#show-browser").disabled = !token || busy || (mode === "local" && !state?.browser_open) ||
+    ["working", "preparing", "submitting", "observing"].includes(status);
   document.querySelector("#remote-controls").disabled = !token || busy || previewBusy || !state?.manual_available;
   document.querySelector("#close-cloud").disabled = !token || busy || !state?.preview_available ||
     ["working", "scheduled", "submitting"].includes(status);
   document.querySelector("#browser-preview").classList.toggle("interactive",
     mode === "cloud" && state?.manual_available && !busy && !previewBusy && document.querySelector("#enable-clicks").checked);
   for (const input of form.querySelectorAll("input")) {
-    input.disabled = busy || ["working", "scheduled", "submitting", "observing"].includes(status);
+    input.disabled = busy || ACTIVE.includes(status);
   }
+}
+
+function duration(seconds) {
+  const total = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(total / 3600);
+  const clock = `${String(Math.floor(total / 60) % 60).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+  return hours ? `${hours}:${clock}` : clock;
+}
+function countdown(remote) {
+  if (!remote.target || !["scheduled", "preparing", "ready"].includes(remote.status)) return "";
+  const left = remote.target - remote.now;
+  const click = left < 60 ? `${Math.max(0, left).toFixed(1)} s` : duration(left);
+  const browser = remote.browser_name || "Browser";
+  if (remote.status === "scheduled" && remote.prepare_at && remote.prepare_at > remote.now) {
+    const launch = new Date(remote.prepare_at * 1000).toLocaleTimeString([], { hour12: false });
+    return `${browser} launches at ${launch} (this computer's time), in ${duration(remote.prepare_at - remote.now)} · Retrieve Booking click in ${click}`;
+  }
+  return remote.status === "ready" ? `Standing by in ${browser} · Retrieve Booking click in ${click}` : `Retrieve Booking click in ${click}`;
 }
 
 async function request(url, options) {
@@ -105,6 +150,14 @@ async function send(action, extra = {}) {
       headers: { "Content-Type": "application/json", "X-App-Token": token },
       body: JSON.stringify({ action, ...(action === "manual" || action === "close" ? {} : fields), ...extra })
     });
+    if (action === "quit") {
+      stopped = true;
+      token = null;
+      document.querySelector("#status").textContent = "stopped";
+      document.querySelector("#message").textContent = "auto-chope-seat has quit. No retrieval is pending. You can close this tab; open the app again to schedule.";
+      document.querySelector("#countdown").textContent = "";
+      return;
+    }
     state = await request("/api/status");
   } catch (problem) {
     error.textContent = problem.message;
@@ -120,6 +173,11 @@ async function send(action, extra = {}) {
 
 buttons.prepare.addEventListener("click", () => send("prepare"));
 buttons.cancel.addEventListener("click", () => send("cancel"));
+document.querySelector("#quit").addEventListener("click", async () => {
+  const pending = ["scheduled", "preparing", "ready"].includes(state?.status);
+  if (!confirm(pending ? "Quit and cancel the scheduled retrieval?" : "Quit auto-chope-seat?")) return;
+  await send("quit");
+});
 document.querySelector("#show-browser").addEventListener("click", () => send("show_browser"));
 document.querySelector("#close-cloud").addEventListener("click", () => send("close"));
 document.querySelector("#enable-clicks").addEventListener("change", updateButtons);
@@ -188,6 +246,9 @@ async function start() {
     mode = config.mode === "cloud" ? "cloud" : "local";
     token = config.token;
     if (mode === "cloud") {
+      buttons.prepare.hidden = false;
+      buttons.schedule.textContent = "2. Schedule retrieval";
+      document.querySelector("#quit").hidden = true;
       document.querySelector("#show-browser").hidden = true;
       document.querySelector("#remote-controls").hidden = false;
       document.querySelector("#close-cloud").hidden = false;
@@ -196,37 +257,43 @@ async function start() {
       document.querySelector("#privacy-note").textContent = "PNR is encrypted in Cloudflare Durable Object storage until cancellation, expiry, or the recorded retrieval attempt. Browser sessions expire after ten minutes. Preview and manual text may contain personal data; they are not saved by this app. Cloud browser usage is metered. Close the cloud session when finished.";
     }
     const poll = async () => {
+      if (stopped) return;
       try {
         const remote = await request("/api/status");
+        if (stopped) return;
         if (state?.status === "edited" && remote.status === "prepared") remote.status = "edited";
         state = remote;
         document.querySelector("#status").textContent = remote.status;
         document.querySelector("#message").textContent = remote.status === "edited"
           ? "Inputs changed. Prepare the browser again before scheduling." : remote.message;
-        document.querySelector("#countdown").textContent = remote.target && remote.status === "scheduled"
-          ? `${Math.max(0, remote.target - remote.now).toFixed(1)} seconds remaining` : "";
+        document.querySelector("#countdown").textContent = countdown(remote);
         document.querySelector("#session-expiry").textContent = mode === "cloud" && remote.preview_available
           ? `Cloud session closes at ${new Date(remote.session_expires * 1000).toLocaleTimeString()}.` : "";
         updateButtons();
       } catch (problem) {
+        if (stopped) return;
         token = null;
-        error.textContent = `Connection lost: ${problem.message}. Pending work may still be running ${mode === "cloud" ? "in Cloudflare" : "in the terminal"}. Reopen this page to reconnect.`;
+        error.textContent = `Connection lost: ${problem.message}. Pending work may still be running ${mode === "cloud" ? "in Cloudflare" : "in the auto-chope-seat app"}. Reopen this page to reconnect.`;
         updateButtons();
         return;
       }
       setTimeout(poll, mode === "cloud" ? 1000 : 250);
     };
     await poll();
-    refreshPreview();
+    if (mode === "cloud") {
+      document.querySelector("#preview-section").hidden = false;
+      refreshPreview();
+    }
   } catch (problem) {
     const hosted = !local || mode === "cloud";
     document.querySelector("#status").textContent = hosted ? "Hosted automation unavailable" : "Automation unavailable";
     document.querySelector("#message").textContent = !hosted
-      ? `Local automation service unavailable: ${problem.message}. Airport and timezone lists are independent; start the Python app to schedule retrieval.`
+      ? `Local automation service unavailable: ${problem.message}. Airport and timezone lists are independent; open the auto-chope-seat app to schedule retrieval.`
       : `Airport and timezone lists work independently. ${problem.message}`;
-    document.querySelector("#preview-message").textContent = !hosted
-      ? "Start the local Python app for browser preview."
-      : "Cloud preview requires the deployed Worker backend, Browser Rendering and Cloudflare Access setup.";
+    if (hosted) {
+      document.querySelector("#preview-section").hidden = false;
+      document.querySelector("#preview-message").textContent = "Cloud preview requires the deployed Worker backend, Browser Rendering and Cloudflare Access setup.";
+    }
     updateButtons();
   }
 }
@@ -244,7 +311,7 @@ async function refreshPreview() {
     } else if (mode === "cloud" && document.hidden) {
       message.textContent = "Preview paused while this page is hidden.";
     } else if (busy || ["working", "submitting", "observing"].includes(state?.status) ||
-        (state?.status === "scheduled" && state.target - state.now <= (mode === "cloud" ? 15 : 3))) {
+        (["scheduled", "ready"].includes(state?.status) && state.target - state.now <= (mode === "cloud" ? 15 : 3))) {
       message.textContent = "Preview paused to prioritize the booking action.";
     } else {
       const response = await fetch("/api/preview", { headers: { "X-App-Token": token } });
@@ -264,7 +331,7 @@ async function refreshPreview() {
     }
   } catch (problem) {
     message.textContent = problem.message;
-    if (mode === "cloud") document.querySelector("#browser-preview").hidden = true;
+    document.querySelector("#browser-preview").hidden = true;
   } finally {
     previewBusy = false;
     updateButtons();

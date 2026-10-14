@@ -1,9 +1,16 @@
 import json
+import os
+import plistlib
 import queue
 import re
 import secrets
+import signal
+import subprocess
+import sys
 import threading
 import time
+import urllib.request
+import webbrowser
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -11,14 +18,33 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 import airportsdata
 from playwright.sync_api import Page, sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
 
-SITE = "https://chopemyseat.flyscoot.com/"
+SITE = "https://chopemyseat.flyscoot.com/home"
 HOST = "127.0.0.1"
 PORT = 8766
 ORIGIN = f"http://{HOST}:{PORT}"
 TOKEN = secrets.token_urlsafe(32)
 ROOT = Path(__file__).parent
+PREPARE_LEAD = 300
+RETRY_INTERVAL = 30
+RETRY_CUTOFF = 60
+CLICK_TIMEOUT_MS = 10000
+MIN_SCHEDULE_LEAD = 90
+HEADLESS = False
+KEEP_AWAKE = True
+USE_DEFAULT_BROWSER = True
+# Playwright can only drive Chromium-based browsers through their installed executable.
+CHROMIUM_BROWSERS = {
+    "com.google.chrome", "com.google.chrome.beta", "com.google.chrome.dev", "com.google.chrome.canary",
+    "com.microsoft.edgemac", "com.microsoft.edgemac.beta", "com.microsoft.edgemac.dev",
+    "com.brave.browser", "org.chromium.chromium", "com.vivaldi.vivaldi", "com.operasoftware.opera",
+    "company.thebrowser.browser",
+}
+ACTIVE_STATUSES = {"working", "scheduled", "preparing", "ready", "submitting", "observing"}
+WINDOW = None
+RETRIEVE_BUTTON = re.compile(r"^Retrieve Booking\b", re.I)
 AIRPORTS = airportsdata.load("IATA")
 STATION_TIMEZONE_OVERRIDES = {
     "TYO": "Asia/Tokyo",
@@ -26,6 +52,43 @@ STATION_TIMEZONE_OVERRIDES = {
     "BWX": "Asia/Jakarta",
     "TRT": "Asia/Makassar",
 }
+
+
+def default_browser() -> dict:
+    """Return the OS default browser's name and, if it can be automated, its executable."""
+    fallback = {"name": "Chromium (bundled)", "executable": None, "note": ""}
+    if not USE_DEFAULT_BROWSER or sys.platform != "darwin":
+        return fallback
+    try:
+        prefs = Path.home() / "Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure.plist"
+        raw = subprocess.run(["plutil", "-convert", "json", "-o", "-", str(prefs)],
+                             capture_output=True, check=True, timeout=5).stdout
+        handlers = json.loads(raw).get("LSHandlers", [])
+        bundle_id = next((h.get("LSHandlerRoleAll") for h in handlers if h.get("LSHandlerURLScheme") == "https"), None)
+    except Exception:
+        bundle_id = None
+    bundle_id = (bundle_id or "com.apple.safari").lower()
+    app_path = None
+    try:
+        found = subprocess.run(["mdfind", f"kMDItemCFBundleIdentifier == '{bundle_id}'c"],
+                               capture_output=True, text=True, timeout=5).stdout.split("\n")
+        app_path = next((Path(p) for p in found if p.endswith(".app") and Path(p).exists()), None)
+    except Exception:
+        pass
+    name = bundle_id
+    executable = None
+    if app_path is not None:
+        try:
+            with open(app_path / "Contents/Info.plist", "rb") as handle:
+                info = plistlib.load(handle)
+            name = info.get("CFBundleDisplayName") or info.get("CFBundleName") or app_path.stem
+            candidate = app_path / "Contents/MacOS" / info.get("CFBundleExecutable", "")
+            executable = str(candidate) if candidate.is_file() else None
+        except Exception:
+            name = app_path.stem
+    if bundle_id in CHROMIUM_BROWSERS and executable:
+        return {"name": name, "executable": executable, "note": ""}
+    return {**fallback, "note": f"{name} cannot be automated, so the bundled Chromium is used instead."}
 
 
 def departure_stations() -> dict:
@@ -46,6 +109,12 @@ def station_timezone(departure: str) -> str | None:
     return zones.pop() if len(zones) == 1 else None
 
 
+def station_code(departure: str) -> str | None:
+    codes = {station["code"] for station in departure_stations()["stations"]
+             if station["name"].casefold() == departure.casefold() or station["code"].casefold() == departure.casefold()}
+    return codes.pop() if len(codes) == 1 else None
+
+
 def booking_input(data: dict) -> dict:
     pnr = str(data.get("pnr", "")).strip().upper()
     departure = str(data.get("departure", "")).strip()
@@ -61,7 +130,7 @@ def booking_input(data: dict) -> dict:
         ZoneInfo(zone)
     except (ZoneInfoNotFoundError, ValueError) as error:
         raise ValueError("Select a valid IANA timezone for the departure airport.") from error
-    return {"pnr": pnr, "departure": departure, "timezone": zone}
+    return {"pnr": pnr, "departure": departure, "timezone": zone, "code": station_code(departure)}
 
 
 def scheduled_timestamp(data: dict, now: float | None = None) -> float:
@@ -84,40 +153,89 @@ def scheduled_timestamp(data: dict, now: float | None = None) -> float:
     if len(possibilities) != 1:
         raise ValueError("That local time occurs twice because of a timezone clock change. Choose an unambiguous time.")
     stamp = possibilities.pop()
-    if stamp <= (time.time() if now is None else now):
+    current = time.time() if now is None else now
+    if local.date() < datetime.fromtimestamp(current, zone).date():
+        raise ValueError(f"The retrieval date must be today ({zone.key}) or later.")
+    if stamp <= current:
         raise ValueError("The scheduled date/time must be in the future.")
     return stamp
+
+
+DEPARTURE_OPTION = '[aria-label^="Dropdown option for"][aria-label*="departing"]'
 
 
 class BookingForm:
     def __init__(self, page: Page):
         self.page = page
 
+    def unique(self, *locators):
+        for locator in locators:
+            visible = locator.filter(visible=True)
+            if visible.count() == 1:
+                return visible
+        return None
+
+    def wait_until_ready(self, timeout: float):
+        # Polls with non-waiting checks; avoids Locator.wait_for stalls seen on the live Angular page.
+        deadline = time.monotonic() + timeout
+        button = self.page.get_by_role("button", name=RETRIEVE_BUTTON)
+        while True:
+            if self.page.get_by_text(re.compile("temporarily unavailable|maintenance", re.I)).count():
+                raise ValueError("Scoot is unavailable or under maintenance.")
+            if button.filter(visible=True).count():
+                return
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"The Retrieve Booking button did not appear within {timeout:.0f} seconds.")
+            self.page.wait_for_timeout(250)
+
     def fields(self):
         if self.page.get_by_text(re.compile("temporarily unavailable|maintenance", re.I)).count():
             raise ValueError("Scoot is unavailable or under maintenance. Nothing has been scheduled.")
-        pnr = self.page.get_by_role("textbox", name=re.compile("Booking Reference|PNR", re.I))
-        if pnr.count() != 1:
-            pnr = self.page.get_by_role("textbox")
-        departure = self.page.get_by_role("combobox", name=re.compile("Departing", re.I))
-        if departure.count() != 1:
-            departure = self.page.get_by_role("combobox")
-        button = self.page.get_by_role("button", name=re.compile(r"^Retrieve Booking\s*$", re.I))
-        if pnr.count() != 1 or departure.count() != 1 or button.count() != 1:
+        pnr = self.unique(self.page.get_by_role("textbox", name=re.compile("Booking Reference|PNR", re.I)))
+        departure = self.unique(
+            self.page.get_by_role("combobox", name=re.compile("Departing", re.I)),
+            self.page.get_by_role("textbox", name=re.compile("departing", re.I)),
+            self.page.get_by_role("combobox"),
+        )
+        button = self.unique(self.page.get_by_role("button", name=RETRIEVE_BUTTON))
+        if pnr is None or departure is None or button is None:
             raise ValueError("The booking form could not be uniquely identified. Live-site integration needs review; no click was made.")
         return pnr, departure, button
+
+    def select_departure(self, departure, name: str, code: str | None = None) -> str:
+        """Selects the station and returns the label ChopeMySeat shows for it."""
+        tag = departure.evaluate("(element) => element.tagName")
+        if tag == "SELECT":
+            departure.select_option(label=name)
+            return name
+        departure.click()
+        options = self.page.locator(DEPARTURE_OPTION).filter(visible=True)
+        if tag != "INPUT":
+            options = self.page.get_by_role("option").filter(visible=True)
+        deadline = time.monotonic() + 5
+        while True:
+            texts = [self.option_lines(options.nth(i)) for i in range(options.count())]
+            # Prefer the exact station name; ChopeMySeat labels can differ from the app list, so fall back to the airport code.
+            matches = [i for i, lines in enumerate(texts) if lines and lines[0] == name]
+            if not matches and code:
+                matches = [i for i, lines in enumerate(texts) if len(lines) >= 2 and lines[-1] == code]
+            if len(matches) == 1:
+                options.nth(matches[0]).click()
+                return texts[matches[0]][0]
+            if time.monotonic() >= deadline:
+                listed = f" ({code})" if code else ""
+                raise ValueError(f"The departure station '{name}'{listed} is not offered by ChopeMySeat or could not be uniquely identified. No retrieval was made.")
+            self.page.wait_for_timeout(200)
+
+    @staticmethod
+    def option_lines(option) -> list[str]:
+        # Live options show the station name, country and IATA code on separate lines.
+        return [line.strip() for line in option.inner_text().splitlines() if line.strip()]
 
     def prepare(self, booking: dict):
         pnr, departure, _ = self.fields()
         pnr.fill(booking["pnr"])
-        if departure.evaluate("(element) => element.tagName") == "SELECT":
-            departure.select_option(label=booking["departure"])
-        else:
-            departure.click()
-            option = self.page.get_by_role("option", name=booking["departure"], exact=True)
-            if option.count() != 1:
-                raise ValueError("The departure option could not be uniquely identified. Selectors need review; no retrieval was made.")
-            option.click()
+        booking["site_departure"] = self.select_departure(departure, booking["departure"], booking.get("code"))
         self.verify(booking)
 
     def verify(self, booking: dict):
@@ -130,7 +248,7 @@ class BookingForm:
             selected = departure.input_value()
         else:
             selected = departure.inner_text()
-        if selected.strip() != booking["departure"]:
+        if selected.strip() != booking.get("site_departure", booking["departure"]):
             raise ValueError("The departure station changed or could not be verified. Prepare the form again.")
         if not button.is_visible() or not button.is_enabled():
             raise ValueError("Retrieve Booking is not available. No click was made.")
@@ -158,12 +276,15 @@ class Controller:
         self.lock = threading.Lock()
         self.commands = queue.Queue()
         self.stop = threading.Event()
-        self.state = {"status": "idle", "message": "Prepare the booking form before scheduling.", "target": None}
+        self.state = {"status": "idle", "message": "Enter the booking and schedule the retrieval time.", "target": None}
         self.worker = threading.Thread(target=self.run, daemon=True)
-        self.preview_requested = threading.Event()
-        self.preview_image = None
-        self.preview_time = None
-        self.preview_error = ""
+        self.playwright = None
+        self.browser = None
+        self.page = None
+        self.result_pages = []
+        self.browser_open = False
+        self.caffeinate = None
+        self.browser_info = {"name": "", "executable": None, "note": ""}
 
     def update(self, status: str, message: str, target: float | None = None):
         with self.lock:
@@ -171,134 +292,208 @@ class Controller:
 
     def snapshot(self) -> dict:
         with self.lock:
-            return {**self.state, "now": time.time(), "preview_time": self.preview_time,
-                    "preview_error": self.preview_error}
-
-    def capture_preview(self, page: Page):
-        try:
-            image = page.screenshot(type="jpeg", quality=65, timeout=1000)
-            with self.lock:
-                self.preview_image = image
-                self.preview_time = time.time()
-                self.preview_error = ""
-        except Exception as error:
-            with self.lock:
-                self.preview_error = f"Browser preview unavailable: {type(error).__name__}: {error}"
-        finally:
-            self.preview_requested.clear()
+            target = self.state["target"]
+            return {**self.state, "now": time.time(), "browser_open": self.browser_open,
+                    "browser_name": self.browser_info["name"], "browser_note": self.browser_info["note"],
+                    "prepare_at": target - PREPARE_LEAD if target else None}
 
     def submit(self, action: str, data: dict):
-        if action not in {"prepare", "schedule", "cancel", "show_browser"}:
+        if action not in {"schedule", "cancel", "show_browser"}:
             raise ValueError("Unknown action.")
         with self.lock:
             status = self.state["status"]
             if action == "show_browser":
-                if status in {"working", "submitting", "observing"}:
+                if not self.browser_open:
+                    raise ValueError(f"The Scoot browser opens {PREPARE_LEAD // 60} minutes before the retrieval time.")
+                if status in {"working", "preparing", "submitting", "observing"}:
                     raise ValueError("Wait until the current browser action completes.")
                 self.commands.put((action, {}))
                 return
-            if action == "prepare":
-                if status in {"working", "scheduled", "submitting", "observing"}:
-                    raise ValueError("Cancel the current schedule before preparing another booking.")
+            if action == "schedule":
+                if status in ACTIVE_STATUSES:
+                    raise ValueError("Cancel the current schedule before scheduling another booking.")
                 payload = booking_input(data)
-            elif action == "schedule":
-                if status != "prepared":
-                    raise ValueError("Prepare and verify the booking form first.")
-                payload = {"target": scheduled_timestamp(data), "timezone": data["timezone"]}
+                payload = {"booking": payload, "target": scheduled_timestamp({**data, "timezone": payload["timezone"]})}
+                if payload["target"] - time.time() < MIN_SCHEDULE_LEAD:
+                    raise ValueError(f"Schedule at least {MIN_SCHEDULE_LEAD} seconds ahead so the browser can be prepared.")
             else:
                 if status in {"submitting", "observing"}:
                     raise ValueError("The click is already in progress and cannot be undone.")
-                if status not in {"prepared", "scheduled"}:
-                    raise ValueError("There is no prepared or scheduled booking to cancel.")
+                if status not in {"scheduled", "preparing", "ready"}:
+                    raise ValueError("There is no scheduled retrieval to cancel.")
                 payload = {}
             self.state = {"status": "working", "message": f"Processing {action}…", "target": None}
             self.commands.put((action, payload))
 
+    def keep_awake(self, enabled: bool):
+        # Prevents idle/system sleep while a retrieval is pending (macOS only; closing the lid can still sleep).
+        if enabled and self.caffeinate is None and sys.platform == "darwin" and KEEP_AWAKE:
+            try:
+                self.caffeinate = subprocess.Popen(["caffeinate", "-dims", "-w", str(os.getpid())])
+            except OSError:
+                self.caffeinate = None
+        elif not enabled and self.caffeinate is not None:
+            self.caffeinate.terminate()
+            self.caffeinate = None
+
+    def open_browser(self):
+        self.close_browser()
+        self.browser = self.playwright.chromium.launch(headless=HEADLESS, executable_path=self.browser_info["executable"])
+        context = self.browser.new_context(viewport={"width": 1280, "height": 900})
+        self.page = context.new_page()
+        self.result_pages = []
+        self.page.on("popup", lambda popup: self.result_pages.append(popup))
+        with self.lock:
+            self.browser_open = True
+
+    def close_browser(self):
+        browser, self.browser, self.page, self.result_pages = self.browser, None, None, []
+        with self.lock:
+            self.browser_open = False
+        if browser is not None:
+            try:
+                browser.close()
+            except Exception:
+                pass
+
+    def visible_page(self) -> Page:
+        open_pages = [page for page in self.result_pages if not page.is_closed()]
+        return open_pages[-1] if open_pages else self.page
+
+    def prepare_page(self, booking: dict, target: float):
+        if self.page is None or self.page.is_closed() or not self.browser.is_connected():
+            self.open_browser()
+        self.result_pages.clear()
+        budget = lambda limit: max(1000, min(limit, (target - 10 - time.time()) * 1000))
+        self.page.goto(SITE, wait_until="domcontentloaded", timeout=budget(45000))
+        try:
+            # Slow third-party assets can delay "load" indefinitely; the form check below is authoritative.
+            self.page.wait_for_load_state("load", timeout=budget(15000))
+        except PlaywrightTimeout:
+            pass
+        form = BookingForm(self.page)
+        form.wait_until_ready(budget(15000) / 1000)
+        form.prepare(booking)
+
+    def advance(self, job: dict) -> dict | None:
+        now = time.time()
+        target = job["target"]
+        if job["ready"]:
+            if now >= target:
+                self.click(job)
+                return None
+            if now >= job["next_check"] and target - now > RETRY_CUTOFF:
+                try:
+                    BookingForm(self.page).verify(job["booking"])
+                    job["next_check"] = now + RETRY_INTERVAL
+                except Exception as error:
+                    job["ready"] = False
+                    job["next_attempt"] = now
+                    job["last_error"] = f"{type(error).__name__}: {error}"
+            return job
+        if now < job["next_attempt"]:
+            return job
+        if target - now < RETRY_CUTOFF:
+            reason = f" Last error: {job['last_error']}" if job["last_error"] else ""
+            raise ValueError(f"The booking form was not ready {RETRY_CUTOFF} seconds before retrieval, so nothing was clicked.{reason}")
+        job["attempts"] += 1
+        self.update("preparing", f"Opening {self.browser_info['name']} on Scoot and filling entries (attempt {job['attempts']}). Nothing will be clicked yet.", target)
+        try:
+            self.prepare_page(job["booking"], target)
+        except Exception as error:
+            job["last_error"] = f"{type(error).__name__}: {error}"
+            job["next_attempt"] = time.time() + RETRY_INTERVAL
+            if target - job["next_attempt"] < RETRY_CUTOFF:
+                raise ValueError(f"Preparation failed and no retry fits before the {RETRY_CUTOFF}-second cutoff, so nothing was clicked. Last error: {job['last_error']}")
+            retry_at = datetime.fromtimestamp(job["next_attempt"], ZoneInfo(job["booking"]["timezone"])).strftime("%H:%M:%S")
+            self.update("preparing", f"Preparation attempt {job['attempts']} failed: {job['last_error']}\nRetrying at {retry_at} (airport time). Nothing has been clicked.", target)
+            return job
+        job["ready"] = True
+        job["next_check"] = time.time() + RETRY_INTERVAL
+        self.update("ready", "Entries filled and verified. Standing by to click Retrieve Booking once at the scheduled time.", target)
+        return job
+
+    def click(self, job: dict):
+        due = job["target"]
+        with self.lock:
+            if self.state["status"] != "ready":
+                return
+            self.state = {"status": "submitting", "message": "Verifying form and clicking once…", "target": due}
+        if time.time() - due > 2:
+            raise ValueError("The scheduled time was missed by more than two seconds. No late click was made.")
+        button = BookingForm(self.page).verify(job["booking"])
+        if time.time() - due > 2:
+            raise ValueError("Verification took too long. No late click was made.")
+        try:
+            button.click(timeout=CLICK_TIMEOUT_MS, no_wait_after=True)
+        except PlaywrightTimeout as error:
+            # Chrome acknowledges the click only after the page's handler runs; a busy page can exceed the
+            # timeout after the press was already delivered, so treat it as sent and never click again.
+            if "performing click action" not in str(error):
+                raise
+        self.update("observing", "Retrieve Booking was clicked once. Reading the result only; no further clicks will be made.")
+        self.page.wait_for_timeout(100)
+        page = self.visible_page()
+        page.bring_to_front()
+        outcome = BookingForm(page).observe_result(stop=self.stop)
+        self.update(outcome["status"], outcome["message"])
+
+    def scheduled_message(self, job: dict) -> str:
+        zone = ZoneInfo(job["booking"]["timezone"])
+        at = datetime.fromtimestamp(job["target"], zone).strftime("%Y-%m-%d %H:%M:%S")
+        opens = datetime.fromtimestamp(job["target"] - PREPARE_LEAD, zone).strftime("%H:%M:%S")
+        note = f" {self.browser_info['note']}" if self.browser_info["note"] else ""
+        return (f"Scheduled for {at} ({zone.key}). {self.browser_info['name']} launches at {opens} to load Scoot and fill the entries, "
+                f"then clicks Retrieve Booking once on time.{note} Keep this app running and the laptop awake, plugged in and open.")
+
     def run(self):
-        booking = None
-        target = None
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(headless=False)
-                context = browser.new_context(viewport={"width": 1280, "height": 900})
-                page = context.new_page()
-                form = BookingForm(page)
-                result_pages = []
-                page.on("popup", lambda popup: result_pages.append(popup))
+                self.playwright = playwright
                 try:
-                    try:
-                        page.goto(SITE, wait_until="domcontentloaded", timeout=15000)
-                    except Exception as error:
-                        self.update("error", f"Initial Scoot page load failed: {type(error).__name__}: {error}. You can try Prepare when the site is available.")
-                    self.capture_preview(page)
-                    while not self.stop.is_set():
-                        try:
-                            action, payload = self.commands.get(timeout=0.02 if target else 0.2)
-                        except queue.Empty:
-                            action = None
-                        try:
-                            if action == "prepare":
-                                target = None
-                                booking = None
-                                result_pages.clear()
-                                with self.lock:
-                                    self.preview_image = None
-                                    self.preview_time = None
-                                page.goto(SITE, wait_until="domcontentloaded", timeout=30000)
-                                page.get_by_role("button", name=re.compile(r"^Retrieve Booking\s*$", re.I)).wait_for(timeout=15000)
-                                form.prepare(payload)
-                                booking = payload
-                                self.capture_preview(page)
-                                self.update("prepared", "Form filled and verified. Review the browser, then schedule one retrieval.")
-                            elif action == "schedule":
-                                if booking is None:
-                                    raise ValueError("No prepared booking.")
-                                if payload["timezone"] != booking["timezone"]:
-                                    raise ValueError("The timezone changed. Prepare again before scheduling.")
-                                form.verify(booking)
-                                if payload["target"] <= time.time():
-                                    raise ValueError("The scheduled time passed during verification. Nothing was clicked.")
-                                target = payload["target"]
-                                self.update("scheduled", "Waiting for the scheduled time. Keep this app, browser, and computer awake.", target)
-                            elif action == "cancel":
-                                target = None
-                                booking = None
-                                self.update("idle", "Cancelled. No future retrieval will be made.")
-                            elif action == "show_browser":
-                                visible_page = result_pages[-1] if result_pages else page
-                                visible_page.bring_to_front()
-                            if target is not None and time.time() >= target:
-                                due = target
-                                target = None
-                                with self.lock:
-                                    if self.state["status"] != "scheduled":
-                                        continue
-                                    self.state = {"status": "submitting", "message": "Verifying form and clicking once…", "target": due}
-                                if time.time() - due > 2:
-                                    raise ValueError("The scheduled time was missed by more than two seconds. No late click was made.")
-                                button = form.verify(booking)
-                                if time.time() - due > 2:
-                                    raise ValueError("Verification took too long. No late click was made.")
-                                button.click(timeout=1500, no_wait_after=True)
-                                booking = None
-                                self.update("observing", "Retrieve Booking was clicked once. Reading the result only; no further clicks will be made.")
-                                page.wait_for_timeout(100)
-                                visible_page = result_pages[-1] if result_pages else page
-                                visible_page.bring_to_front()
-                                outcome = BookingForm(visible_page).observe_result(stop=self.stop)
-                                self.capture_preview(visible_page)
-                                self.update(outcome["status"], outcome["message"])
-                            if self.preview_requested.is_set() and (target is None or target - time.time() > 3):
-                                self.capture_preview(result_pages[-1] if result_pages else page)
-                        except Exception as error:
-                            target = None
-                            booking = None
-                            self.update("error", f"{type(error).__name__}: {error} No automatic retry will be attempted.")
+                    self.loop()
                 finally:
-                    browser.close()
+                    self.close_browser()
+                    self.keep_awake(False)
         except Exception as error:
             self.update("error", f"Browser worker stopped: {type(error).__name__}: {error}. Restart the app after resolving this error.")
             self.stop.set()
+
+    def loop(self):
+        job = None
+        while not self.stop.is_set():
+            wait = 0.2
+            if job is not None:
+                wait = min(wait, max(0.005, (job["target"] - time.time()) / 2))
+            try:
+                action, payload = self.commands.get(timeout=wait)
+            except queue.Empty:
+                action = None
+            try:
+                if action == "schedule":
+                    self.close_browser()
+                    self.browser_info = default_browser()
+                    job = {**payload, "ready": False, "attempts": 0, "last_error": "",
+                           "next_attempt": payload["target"] - PREPARE_LEAD}
+                    self.keep_awake(True)
+                    self.update("scheduled", self.scheduled_message(job), job["target"])
+                elif action == "cancel":
+                    job = None
+                    self.close_browser()
+                    self.keep_awake(False)
+                    self.update("idle", "Cancelled. No retrieval will be made.")
+                elif action == "show_browser" and self.page is not None:
+                    self.visible_page().bring_to_front()
+                if job is not None:
+                    job = self.advance(job)
+                    if job is None:
+                        self.keep_awake(False)
+                    elif not job["ready"] and self.state["status"] == "ready":
+                        self.update("preparing", f"Entries could not be re-verified ({job['last_error']}). Preparing again; nothing was clicked.", job["target"])
+            except Exception as error:
+                job = None
+                self.keep_awake(False)
+                self.update("error", f"{type(error).__name__}: {error} No automatic retry will be attempted.")
 
 
 controller = Controller()
@@ -332,18 +527,6 @@ class Handler(BaseHTTPRequestHandler):
             self.json_response(200, {"token": TOKEN, "timezones": sorted(available_timezones())})
         elif self.path == "/api/stations":
             self.json_response(200, departure_stations())
-        elif self.path == "/api/preview":
-            if self.headers.get("X-App-Token") != TOKEN:
-                self.json_response(403, {"error": "Unauthorized preview request."})
-                return
-            controller.preview_requested.set()
-            with controller.lock:
-                image = controller.preview_image
-                message = controller.preview_error
-            if image is None:
-                self.json_response(503, {"error": message or "Waiting for the controlled browser preview."})
-            else:
-                self.send(200, image, "image/jpeg")
         elif self.path in {"/", "/app.js", "/style.css", "/stations.json", "/timezones.json"}:
             filename = "index.html" if self.path == "/" else self.path[1:]
             content_type = {"/": "text/html; charset=utf-8", "/app.js": "text/javascript", "/style.css": "text/css",
@@ -353,6 +536,13 @@ class Handler(BaseHTTPRequestHandler):
             self.json_response(404, {"error": "Not found."})
 
     def do_POST(self):
+        if self.path == "/api/focus" and self.valid_host():
+            # Lets a second launch bring the existing window forward; it exposes no data or actions.
+            if WINDOW is not None:
+                WINDOW.restore()
+                WINDOW.show()
+            self.json_response(202 if WINDOW is not None else 404, {"window": WINDOW is not None})
+            return
         if not self.valid_host() or self.headers.get("Origin") != ORIGIN or self.headers.get("X-App-Token") != TOKEN:
             self.json_response(403, {"error": "Unauthorized local request."})
             return
@@ -368,21 +558,94 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("Expected an object.")
             if controller.stop.is_set():
                 raise ValueError("Browser worker unavailable. Restart the app.")
+            if data.get("action") == "quit":
+                if controller.snapshot()["status"] in {"submitting", "observing"}:
+                    raise ValueError("The click is in progress. Quit after it completes.")
+                self.json_response(202, {"accepted": True})
+                if WINDOW is not None:
+                    WINDOW.destroy()
+                else:
+                    threading.Thread(target=self.server.shutdown, daemon=True).start()
+                return
             controller.submit(data.get("action"), data)
             self.json_response(202, {"accepted": True})
         except (ValueError, ZoneInfoNotFoundError) as error:
             self.json_response(400, {"error": str(error)})
 
 
-def main():
-    server = ThreadingHTTPServer((HOST, PORT), Handler)
-    controller.worker.start()
-    print(f"auto-chope-seat: {ORIGIN} — Ctrl+C to stop.", flush=True)
+def stop_on_terminate(*_):
+    if WINDOW is not None:
+        WINDOW.destroy()
+    else:
+        raise KeyboardInterrupt
+
+
+def window_closing(window):
+    status = controller.snapshot()["status"]
+    if status in {"submitting", "observing"}:
+        return False
+    window.confirm_close = status in {"scheduled", "preparing", "ready"}
+    window.localization["global.quitConfirmation"] = "Quit auto-chope-seat and cancel the scheduled retrieval?"
+
+
+def focus_running_window() -> bool:
     try:
-        server.serve_forever()
+        request = urllib.request.Request(f"{ORIGIN}/api/focus", data=b"", method="POST")
+        with urllib.request.urlopen(request, timeout=2):
+            return True
+    except Exception:
+        return False
+
+
+def run_window(server: ThreadingHTTPServer):
+    global WINDOW
+    import webview
+
+    if sys.platform == "darwin":
+        try:
+            from Foundation import NSBundle
+            NSBundle.mainBundle().infoDictionary()["CFBundleName"] = "auto-chope-seat"
+        except Exception:
+            pass
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    WINDOW = webview.create_window("auto-chope-seat", ORIGIN, width=1100, height=900, min_size=(640, 560))
+    WINDOW.events.closing += window_closing
+    try:
+        webview.start()
     except KeyboardInterrupt:
-        print("Stopping; pending retrievals are cancelled.", flush=True)
+        pass
     finally:
+        server.shutdown()
+
+
+def main():
+    args = sys.argv[1:]
+    window_mode = "--window" in args
+    open_page = "--open" in args
+    try:
+        server = ThreadingHTTPServer((HOST, PORT), Handler)
+    except OSError:
+        if window_mode:
+            if focus_running_window():
+                sys.exit(0)
+        elif open_page:
+            webbrowser.open(ORIGIN)
+        print(f"auto-chope-seat could not start: port {PORT} is in use (is it already running?).", flush=True)
+        sys.exit(1)
+    signal.signal(signal.SIGTERM, stop_on_terminate)
+    controller.worker.start()
+    print(f"auto-chope-seat: {ORIGIN}" + (" (window)" if window_mode else " — Ctrl+C to stop."), flush=True)
+    try:
+        if window_mode:
+            run_window(server)
+        else:
+            if open_page:
+                webbrowser.open(ORIGIN)
+            server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        print("Stopping; pending retrievals are cancelled.", flush=True)
         controller.stop.set()
         controller.worker.join(timeout=35)
         server.server_close()

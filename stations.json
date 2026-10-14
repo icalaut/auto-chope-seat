@@ -1,7 +1,7 @@
 {
-  "source": "https://www.flyscoot.com/en",
-  "source_field": "From departure picker",
-  "extracted_on": "2026-10-13",
+  "source": "https://chopemyseat.flyscoot.com/home",
+  "source_field": "Departing dropdown (Staff travel Web Check-in Form)",
+  "extracted_on": "2026-10-14",
   "stations": [
     {
       "name": "Singapore",
@@ -10,34 +10,124 @@
       "timezone": "Asia/Singapore"
     },
     {
-      "name": "Melbourne",
-      "country": "Australia",
-      "code": "MEL",
-      "timezone": "Australia/Melbourne"
+      "name": "Akita",
+      "country": "Japan",
+      "code": "AXT",
+      "timezone": "Asia/Tokyo"
     },
     {
-      "name": "Perth",
-      "country": "Australia",
-      "code": "PER",
-      "timezone": "Australia/Perth"
+      "name": "Amritsar",
+      "country": "India",
+      "code": "ATQ",
+      "timezone": "Asia/Kolkata"
     },
     {
-      "name": "Sydney",
-      "country": "Australia",
-      "code": "SYD",
-      "timezone": "Australia/Sydney"
+      "name": "Athens",
+      "country": "Greece",
+      "code": "ATH",
+      "timezone": "Europe/Athens"
     },
     {
-      "name": "Vienna",
-      "country": "Austria",
-      "code": "VIE",
-      "timezone": "Europe/Vienna"
+      "name": "Bali",
+      "country": "Indonesia",
+      "code": "DPS",
+      "timezone": "Asia/Makassar"
+    },
+    {
+      "name": "Balikpapan",
+      "country": "Indonesia",
+      "code": "BPN",
+      "timezone": "Asia/Makassar"
+    },
+    {
+      "name": "Bangkok (Suvarnabhumi)",
+      "country": "Thailand",
+      "code": "BKK",
+      "timezone": "Asia/Bangkok"
+    },
+    {
+      "name": "Belitung",
+      "country": "Indonesia",
+      "code": "TJQ",
+      "timezone": "Asia/Jakarta"
+    },
+    {
+      "name": "Bintulu",
+      "country": "Malaysia",
+      "code": "BTU",
+      "timezone": "Asia/Kuching"
+    },
+    {
+      "name": "Boracay",
+      "country": "Philippines",
+      "code": "MPH",
+      "timezone": "Asia/Manila"
+    },
+    {
+      "name": "Cebu",
+      "country": "Philippines",
+      "code": "CEB",
+      "timezone": "Asia/Manila"
     },
     {
       "name": "Changsha",
       "country": "China",
       "code": "CSX",
       "timezone": "Asia/Shanghai"
+    },
+    {
+      "name": "Chennai",
+      "country": "India",
+      "code": "MAA",
+      "timezone": "Asia/Kolkata"
+    },
+    {
+      "name": "Chiang Mai",
+      "country": "Thailand",
+      "code": "CNX",
+      "timezone": "Asia/Bangkok"
+    },
+    {
+      "name": "Chiang Rai",
+      "country": "Thailand",
+      "code": "CEI",
+      "timezone": "Asia/Bangkok"
+    },
+    {
+      "name": "Clark",
+      "country": "Philippines",
+      "code": "CRK",
+      "timezone": "Asia/Manila"
+    },
+    {
+      "name": "Coimbatore",
+      "country": "India",
+      "code": "CJB",
+      "timezone": "Asia/Kolkata"
+    },
+    {
+      "name": "Da Nang",
+      "country": "Vietnam",
+      "code": "DAD",
+      "timezone": "Asia/Ho_Chi_Minh"
+    },
+    {
+      "name": "Dalat",
+      "country": "Vietnam",
+      "code": "DLI",
+      "timezone": "Asia/Ho_Chi_Minh"
+    },
+    {
+      "name": "Davao",
+      "country": "Philippines",
+      "code": "DVO",
+      "timezone": "Asia/Manila"
+    },
+    {
+      "name": "Fukushima",
+      "country": "Japan",
+      "code": "FKS",
+      "timezone": "Asia/Tokyo"
     },
     {
       "name": "Fuzhou",
@@ -52,16 +142,16 @@
       "timezone": "Asia/Shanghai"
     },
     {
-      "name": "Guiyang",
-      "country": "China",
-      "code": "KWE",
-      "timezone": "Asia/Shanghai"
-    },
-    {
       "name": "Haikou",
       "country": "China",
       "code": "HAK",
       "timezone": "Asia/Shanghai"
+    },
+    {
+      "name": "Hanamaki",
+      "country": "Japan",
+      "code": "HNA",
+      "timezone": "Asia/Tokyo"
     },
     {
       "name": "Hangzhou",
@@ -70,9 +160,225 @@
       "timezone": "Asia/Shanghai"
     },
     {
+      "name": "Hanoi",
+      "country": "Vietnam",
+      "code": "HAN",
+      "timezone": "Asia/Ho_Chi_Minh"
+    },
+    {
+      "name": "Hat Yai",
+      "country": "Thailand",
+      "code": "HDY",
+      "timezone": "Asia/Bangkok"
+    },
+    {
+      "name": "Helsinki",
+      "country": "Finland",
+      "code": "HEL",
+      "timezone": "Europe/Helsinki"
+    },
+    {
+      "name": "Ho Chi Minh City",
+      "country": "Vietnam",
+      "code": "SGN",
+      "timezone": "Asia/Ho_Chi_Minh"
+    },
+    {
+      "name": "Hong Kong",
+      "country": "Hong Kong SAR, China",
+      "code": "HKG",
+      "timezone": "Asia/Hong_Kong"
+    },
+    {
+      "name": "Iloilo",
+      "country": "Philippines",
+      "code": "ILO",
+      "timezone": "Asia/Manila"
+    },
+    {
+      "name": "Ipoh",
+      "country": "Malaysia",
+      "code": "IPH",
+      "timezone": "Asia/Kuala_Lumpur"
+    },
+    {
+      "name": "Ishigaki",
+      "country": "Japan",
+      "code": "ISG",
+      "timezone": "Asia/Tokyo"
+    },
+    {
+      "name": "Jakarta",
+      "country": "Indonesia",
+      "code": "CGK",
+      "timezone": "Asia/Jakarta"
+    },
+    {
+      "name": "Jeddah",
+      "country": "Saudi Arabia",
+      "code": "JED",
+      "timezone": "Asia/Riyadh"
+    },
+    {
+      "name": "Jeju",
+      "country": "South Korea",
+      "code": "CJU",
+      "timezone": "Asia/Seoul"
+    },
+    {
+      "name": "Jinan",
+      "country": "China",
+      "code": "TNA",
+      "timezone": "Asia/Shanghai"
+    },
+    {
+      "name": "Kertajati",
+      "country": "Indonesia",
+      "code": "KJT",
+      "timezone": "Asia/Jakarta"
+    },
+    {
+      "name": "Kochi",
+      "country": "Japan",
+      "code": "KCZ",
+      "timezone": "Asia/Tokyo"
+    },
+    {
+      "name": "Koh Samui",
+      "country": "Thailand",
+      "code": "USM",
+      "timezone": "Asia/Bangkok"
+    },
+    {
+      "name": "Komatsu",
+      "country": "Japan",
+      "code": "KMQ",
+      "timezone": "Asia/Tokyo"
+    },
+    {
+      "name": "Kota Bharu",
+      "country": "Malaysia",
+      "code": "KBR",
+      "timezone": "Asia/Kuala_Lumpur"
+    },
+    {
+      "name": "Kota Kinabalu",
+      "country": "Malaysia",
+      "code": "BKI",
+      "timezone": "Asia/Kuching"
+    },
+    {
+      "name": "Krabi",
+      "country": "Thailand",
+      "code": "KBV",
+      "timezone": "Asia/Bangkok"
+    },
+    {
+      "name": "Kuala Lumpur",
+      "country": "Malaysia",
+      "code": "KUL",
+      "timezone": "Asia/Kuala_Lumpur"
+    },
+    {
+      "name": "Kuala Namu",
+      "country": "Indonesia",
+      "code": "KNO",
+      "timezone": "Asia/Jakarta"
+    },
+    {
+      "name": "Kuantan",
+      "country": "Malaysia",
+      "code": "KUA",
+      "timezone": "Asia/Kuala_Lumpur"
+    },
+    {
+      "name": "Kuching",
+      "country": "Malaysia",
+      "code": "KCH",
+      "timezone": "Asia/Kuala_Lumpur"
+    },
+    {
       "name": "Kunming",
       "country": "China",
       "code": "KMG",
+      "timezone": "Asia/Shanghai"
+    },
+    {
+      "name": "Labuan Bajo",
+      "country": "Indonesia",
+      "code": "LBJ",
+      "timezone": "Asia/Makassar"
+    },
+    {
+      "name": "Langkawi",
+      "country": "Malaysia",
+      "code": "LGK",
+      "timezone": "Asia/Kuala_Lumpur"
+    },
+    {
+      "name": "Lombok",
+      "country": "Indonesia",
+      "code": "LOP",
+      "timezone": "Asia/Makassar"
+    },
+    {
+      "name": "Lucknow",
+      "country": "India",
+      "code": "LKO",
+      "timezone": "Asia/Kolkata"
+    },
+    {
+      "name": "Macau",
+      "country": "Macau SAR, China",
+      "code": "MFM",
+      "timezone": "Asia/Macau"
+    },
+    {
+      "name": "Makassar",
+      "country": "Indonesia",
+      "code": "UPG",
+      "timezone": "Asia/Makassar"
+    },
+    {
+      "name": "Malacca",
+      "country": "Malaysia",
+      "code": "MKZ",
+      "timezone": "Asia/Kuala_Lumpur"
+    },
+    {
+      "name": "Manado",
+      "country": "Indonesia",
+      "code": "MDC",
+      "timezone": "Asia/Makassar"
+    },
+    {
+      "name": "Manila",
+      "country": "Philippines",
+      "code": "MNL",
+      "timezone": "Asia/Manila"
+    },
+    {
+      "name": "Melbourne",
+      "country": "Australia",
+      "code": "MEL",
+      "timezone": "Australia/Melbourne"
+    },
+    {
+      "name": "Miri",
+      "country": "Malaysia",
+      "code": "MYY",
+      "timezone": "Asia/Kuching"
+    },
+    {
+      "name": "Miyazaki",
+      "country": "Japan",
+      "code": "KMI",
+      "timezone": "Asia/Tokyo"
+    },
+    {
+      "name": "Nanchang",
+      "country": "China",
+      "code": "KHN",
       "timezone": "Asia/Shanghai"
     },
     {
@@ -88,154 +394,40 @@
       "timezone": "Asia/Shanghai"
     },
     {
-      "name": "Qingdao",
+      "name": "Nha Trang",
+      "country": "Vietnam",
+      "code": "CXR",
+      "timezone": "Asia/Ho_Chi_Minh"
+    },
+    {
+      "name": "Niigata",
+      "country": "Japan",
+      "code": "KIJ",
+      "timezone": "Asia/Tokyo"
+    },
+    {
+      "name": "Ningbo",
       "country": "China",
-      "code": "TAO",
+      "code": "NGB",
       "timezone": "Asia/Shanghai"
     },
     {
-      "name": "Shantou (Jieyang Chaoshan)",
-      "country": "China",
-      "code": "SWA",
-      "timezone": "Asia/Shanghai"
+      "name": "Okayama",
+      "country": "Japan",
+      "code": "OKJ",
+      "timezone": "Asia/Tokyo"
     },
     {
-      "name": "Shenyang",
-      "country": "China",
-      "code": "SHE",
-      "timezone": "Asia/Shanghai"
+      "name": "Okinawa",
+      "country": "Japan",
+      "code": "OKA",
+      "timezone": "Asia/Tokyo"
     },
     {
-      "name": "Tianjin",
-      "country": "China",
-      "code": "TSN",
-      "timezone": "Asia/Shanghai"
-    },
-    {
-      "name": "Wuhan",
-      "country": "China",
-      "code": "WUH",
-      "timezone": "Asia/Shanghai"
-    },
-    {
-      "name": "Xi'an",
-      "country": "China",
-      "code": "XIY",
-      "timezone": "Asia/Shanghai"
-    },
-    {
-      "name": "Zhengzhou",
-      "country": "China",
-      "code": "CGO",
-      "timezone": "Asia/Shanghai"
-    },
-    {
-      "name": "Athens",
-      "country": "Greece",
-      "code": "ATH",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Hong Kong",
-      "country": "Hong Kong SAR, China",
-      "code": "HKG",
-      "timezone": "Asia/Hong_Kong"
-    },
-    {
-      "name": "Amritsar",
-      "country": "India",
-      "code": "ATQ",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Chennai",
-      "country": "India",
-      "code": "MAA",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Coimbatore",
-      "country": "India",
-      "code": "CJB",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Thiruvananthapuram",
-      "country": "India",
-      "code": "TRV",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Tiruchirappalli (Trichy)",
-      "country": "India",
-      "code": "TRZ",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Visakhapatnam",
-      "country": "India",
-      "code": "VTZ",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Balikpapan",
-      "country": "Indonesia",
-      "code": "BPN",
-      "timezone": "Asia/Makassar"
-    },
-    {
-      "name": "Belitung (Tanjung Pandan)",
-      "country": "Indonesia",
-      "code": "TJQ",
-      "timezone": "Asia/Jakarta"
-    },
-    {
-      "name": "Denpasar (Bali)",
-      "country": "Indonesia",
-      "code": "DPS",
-      "timezone": "Asia/Makassar"
-    },
-    {
-      "name": "Jakarta",
-      "country": "Indonesia",
-      "code": "CGK",
-      "timezone": "Asia/Jakarta"
-    },
-    {
-      "name": "Kertajati",
-      "country": "Indonesia",
-      "code": "KJT",
-      "timezone": "Asia/Jakarta"
-    },
-    {
-      "name": "Labuan Bajo (Komodo)",
-      "country": "Indonesia",
-      "code": "LBJ",
-      "timezone": "Asia/Makassar"
-    },
-    {
-      "name": "Lombok",
-      "country": "Indonesia",
-      "code": "LOP",
-      "timezone": "Asia/Makassar"
-    },
-    {
-      "name": "Makassar",
-      "country": "Indonesia",
-      "code": "UPG",
-      "timezone": "Asia/Makassar"
-    },
-    {
-      "name": "Manado",
-      "country": "Indonesia",
-      "code": "MDC",
-      "timezone": "Asia/Makassar"
-    },
-    {
-      "name": "Medan",
-      "country": "Indonesia",
-      "code": "KNO",
-      "timezone": "Asia/Jakarta"
+      "name": "Osaka",
+      "country": "Japan",
+      "code": "KIX",
+      "timezone": "Asia/Tokyo"
     },
     {
       "name": "Padang",
@@ -256,10 +448,52 @@
       "timezone": "Asia/Jakarta"
     },
     {
+      "name": "Penang",
+      "country": "Malaysia",
+      "code": "PEN",
+      "timezone": "Asia/Kuala_Lumpur"
+    },
+    {
+      "name": "Perth",
+      "country": "Australia",
+      "code": "PER",
+      "timezone": "Australia/Perth"
+    },
+    {
+      "name": "Phu Quoc",
+      "country": "Vietnam",
+      "code": "PQC",
+      "timezone": "Asia/Ho_Chi_Minh"
+    },
+    {
+      "name": "Phuket",
+      "country": "Thailand",
+      "code": "HKT",
+      "timezone": "Asia/Bangkok"
+    },
+    {
       "name": "Pontianak",
       "country": "Indonesia",
       "code": "PNK",
       "timezone": "Asia/Pontianak"
+    },
+    {
+      "name": "Qingdao",
+      "country": "China",
+      "code": "TAO",
+      "timezone": "Asia/Shanghai"
+    },
+    {
+      "name": "Saga",
+      "country": "Japan",
+      "code": "HSG",
+      "timezone": "Asia/Tokyo"
+    },
+    {
+      "name": "Sapporo",
+      "country": "Japan",
+      "code": "CTS",
+      "timezone": "Asia/Tokyo"
     },
     {
       "name": "Semarang",
@@ -268,34 +502,88 @@
       "timezone": "Asia/Jakarta"
     },
     {
+      "name": "Sendai",
+      "country": "Japan",
+      "code": "SDJ",
+      "timezone": "Asia/Tokyo"
+    },
+    {
+      "name": "Seoul",
+      "country": "South Korea",
+      "code": "ICN",
+      "timezone": "Asia/Seoul"
+    },
+    {
+      "name": "Shantou",
+      "country": "China",
+      "code": "SWA",
+      "timezone": "Asia/Shanghai"
+    },
+    {
+      "name": "Shenyang",
+      "country": "China",
+      "code": "SHE",
+      "timezone": "Asia/Shanghai"
+    },
+    {
+      "name": "Shenzhen",
+      "country": "China",
+      "code": "SZX",
+      "timezone": "Asia/Shanghai"
+    },
+    {
+      "name": "Sibu",
+      "country": "Malaysia",
+      "code": "SBW",
+      "timezone": "Asia/Kuching"
+    },
+    {
+      "name": "Subang",
+      "country": "Malaysia",
+      "code": "SZB",
+      "timezone": "Asia/Kuala_Lumpur"
+    },
+    {
       "name": "Surabaya",
       "country": "Indonesia",
       "code": "SUB",
       "timezone": "Asia/Jakarta"
     },
     {
-      "name": "Yogyakarta",
-      "country": "Indonesia",
-      "code": "YIA",
-      "timezone": "Asia/Jakarta"
+      "name": "Sydney(Kingsford Smith)",
+      "country": "Australia",
+      "code": "SYD",
+      "timezone": "Australia/Sydney"
     },
     {
-      "name": "Okinawa",
-      "country": "Japan",
-      "code": "OKA",
-      "timezone": "Asia/Tokyo"
+      "name": "Taipei",
+      "country": "Taiwan, China",
+      "code": "TPE",
+      "timezone": "Asia/Taipei"
     },
     {
-      "name": "Osaka",
-      "country": "Japan",
-      "code": "KIX",
-      "timezone": "Asia/Tokyo"
+      "name": "Tawau",
+      "country": "Malaysia",
+      "code": "TWU",
+      "timezone": "Asia/Kuala_Lumpur"
     },
     {
-      "name": "Sapporo (Hokkaido)",
-      "country": "Japan",
-      "code": "CTS",
-      "timezone": "Asia/Tokyo"
+      "name": "Thiruvananthapuram",
+      "country": "India",
+      "code": "TRV",
+      "timezone": "Asia/Kolkata"
+    },
+    {
+      "name": "Tianjin",
+      "country": "China",
+      "code": "TSN",
+      "timezone": "Asia/Shanghai"
+    },
+    {
+      "name": "Tiruchirappalli (Trichy)",
+      "country": "India",
+      "code": "TRZ",
+      "timezone": "Asia/Kolkata"
     },
     {
       "name": "Tokyo (All Airports)",
@@ -316,988 +604,46 @@
       "timezone": "Asia/Tokyo"
     },
     {
+      "name": "Vienna",
+      "country": "Austria",
+      "code": "VIE",
+      "timezone": "Europe/Vienna"
+    },
+    {
       "name": "Vientiane",
       "country": "Laos",
       "code": "VTE",
       "timezone": "Asia/Vientiane"
     },
     {
-      "name": "Macau",
-      "country": "Macau SAR, China",
-      "code": "MFM",
-      "timezone": "Asia/Macau"
+      "name": "Vishakhapatnam",
+      "country": "India",
+      "code": "VTZ",
+      "timezone": "Asia/Kolkata"
     },
     {
-      "name": "Ipoh",
-      "country": "Malaysia",
-      "code": "IPH",
-      "timezone": "Asia/Kuala_Lumpur"
-    },
-    {
-      "name": "Kota Bharu",
-      "country": "Malaysia",
-      "code": "KBR",
-      "timezone": "Asia/Kuala_Lumpur"
-    },
-    {
-      "name": "Kota Kinabalu",
-      "country": "Malaysia",
-      "code": "BKI",
-      "timezone": "Asia/Kuching"
-    },
-    {
-      "name": "Kuala Lumpur",
-      "country": "Malaysia",
-      "code": "KUL",
-      "timezone": "Asia/Kuala_Lumpur"
-    },
-    {
-      "name": "Kuantan",
-      "country": "Malaysia",
-      "code": "KUA",
-      "timezone": "Asia/Kuala_Lumpur"
-    },
-    {
-      "name": "Kuching",
-      "country": "Malaysia",
-      "code": "KCH",
-      "timezone": "Asia/Kuala_Lumpur"
-    },
-    {
-      "name": "Langkawi",
-      "country": "Malaysia",
-      "code": "LGK",
-      "timezone": "Asia/Kuala_Lumpur"
-    },
-    {
-      "name": "Malacca (Melaka)",
-      "country": "Malaysia",
-      "code": "MKZ",
-      "timezone": "Asia/Kuala_Lumpur"
-    },
-    {
-      "name": "Miri",
-      "country": "Malaysia",
-      "code": "MYY",
-      "timezone": "Asia/Kuching"
-    },
-    {
-      "name": "Penang",
-      "country": "Malaysia",
-      "code": "PEN",
-      "timezone": "Asia/Kuala_Lumpur"
-    },
-    {
-      "name": "Sibu",
-      "country": "Malaysia",
-      "code": "SBW",
-      "timezone": "Asia/Kuching"
-    },
-    {
-      "name": "Subang",
-      "country": "Malaysia",
-      "code": "SZB",
-      "timezone": "Asia/Kuala_Lumpur"
-    },
-    {
-      "name": "Cebu",
-      "country": "Philippines",
-      "code": "CEB",
-      "timezone": "Asia/Manila"
-    },
-    {
-      "name": "Clark",
-      "country": "Philippines",
-      "code": "CRK",
-      "timezone": "Asia/Manila"
-    },
-    {
-      "name": "Davao",
-      "country": "Philippines",
-      "code": "DVO",
-      "timezone": "Asia/Manila"
-    },
-    {
-      "name": "Iloilo City",
-      "country": "Philippines",
-      "code": "ILO",
-      "timezone": "Asia/Manila"
-    },
-    {
-      "name": "Manila",
-      "country": "Philippines",
-      "code": "MNL",
-      "timezone": "Asia/Manila"
-    },
-    {
-      "name": "Jeddah",
-      "country": "Saudi Arabia",
-      "code": "JED",
-      "timezone": "Asia/Riyadh"
-    },
-    {
-      "name": "Jeju",
-      "country": "South Korea",
-      "code": "CJU",
-      "timezone": "Asia/Seoul"
-    },
-    {
-      "name": "Seoul",
-      "country": "South Korea",
-      "code": "ICN",
-      "timezone": "Asia/Seoul"
-    },
-    {
-      "name": "Taipei",
-      "country": "Taiwan, China",
-      "code": "TPE",
-      "timezone": "Asia/Taipei"
-    },
-    {
-      "name": "Bangkok (Suvarnabhumi)",
-      "country": "Thailand",
-      "code": "BKK",
-      "timezone": "Asia/Bangkok"
-    },
-    {
-      "name": "Chiang Mai",
-      "country": "Thailand",
-      "code": "CNX",
-      "timezone": "Asia/Bangkok"
-    },
-    {
-      "name": "Chiang Rai",
-      "country": "Thailand",
-      "code": "CEI",
-      "timezone": "Asia/Bangkok"
-    },
-    {
-      "name": "Hat Yai",
-      "country": "Thailand",
-      "code": "HDY",
-      "timezone": "Asia/Bangkok"
-    },
-    {
-      "name": "Koh Samui",
-      "country": "Thailand",
-      "code": "USM",
-      "timezone": "Asia/Bangkok"
-    },
-    {
-      "name": "Krabi",
-      "country": "Thailand",
-      "code": "KBV",
-      "timezone": "Asia/Bangkok"
-    },
-    {
-      "name": "Phuket",
-      "country": "Thailand",
-      "code": "HKT",
-      "timezone": "Asia/Bangkok"
-    },
-    {
-      "name": "Da Nang",
-      "country": "Vietnam",
-      "code": "DAD",
-      "timezone": "Asia/Ho_Chi_Minh"
-    },
-    {
-      "name": "Hanoi",
-      "country": "Vietnam",
-      "code": "HAN",
-      "timezone": "Asia/Ho_Chi_Minh"
-    },
-    {
-      "name": "Ho Chi Minh City",
-      "country": "Vietnam",
-      "code": "SGN",
-      "timezone": "Asia/Ho_Chi_Minh"
-    },
-    {
-      "name": "Nha Trang (Cam Ranh)",
-      "country": "Vietnam",
-      "code": "CXR",
-      "timezone": "Asia/Ho_Chi_Minh"
-    },
-    {
-      "name": "Phu Quoc",
-      "country": "Vietnam",
-      "code": "PQC",
-      "timezone": "Asia/Ho_Chi_Minh"
-    },
-    {
-      "name": "Tirana",
-      "country": "Albania",
-      "code": "TIA",
-      "timezone": "Europe/Tirane"
-    },
-    {
-      "name": "Yerevan",
-      "country": "Armenia",
-      "code": "EVN",
-      "timezone": "Asia/Yerevan"
-    },
-    {
-      "name": "Adelaide",
-      "country": "Australia",
-      "code": "ADL",
-      "timezone": "Australia/Adelaide"
-    },
-    {
-      "name": "Brisbane",
-      "country": "Australia",
-      "code": "BNE",
-      "timezone": "Australia/Brisbane"
-    },
-    {
-      "name": "Cairns",
-      "country": "Australia",
-      "code": "CNS",
-      "timezone": "Australia/Brisbane"
-    },
-    {
-      "name": "Canberra",
-      "country": "Australia",
-      "code": "CBR",
-      "timezone": "Australia/Sydney"
-    },
-    {
-      "name": "Darwin",
-      "country": "Australia",
-      "code": "DRW",
-      "timezone": "Australia/Darwin"
-    },
-    {
-      "name": "Hobart",
-      "country": "Australia",
-      "code": "HBA",
-      "timezone": "Australia/Hobart"
-    },
-    {
-      "name": "Launceston",
-      "country": "Australia",
-      "code": "LST",
-      "timezone": "Australia/Melbourne"
-    },
-    {
-      "name": "Sunshine Coast",
-      "country": "Australia",
-      "code": "MCY",
-      "timezone": "Australia/Brisbane"
-    },
-    {
-      "name": "Bahrain",
-      "country": "Bahrain",
-      "code": "BAH",
-      "timezone": "Asia/Bahrain"
-    },
-    {
-      "name": "Dhaka",
-      "country": "Bangladesh",
-      "code": "DAC",
-      "timezone": "Asia/Dhaka"
-    },
-    {
-      "name": "Brussels",
-      "country": "Belgium",
-      "code": "BRU",
-      "timezone": "Europe/Brussels"
-    },
-    {
-      "name": "Bandar Seri Begawan",
-      "country": "Brunei Darussalam",
-      "code": "BWN",
-      "timezone": "Asia/Brunei"
-    },
-    {
-      "name": "Sofia",
-      "country": "Bulgaria",
-      "code": "SOF",
-      "timezone": "Europe/Sofia"
-    },
-    {
-      "name": "Phnom Penh",
-      "country": "Cambodia",
-      "code": "PNH",
-      "timezone": "Asia/Phnom_Penh"
-    },
-    {
-      "name": "Beijing",
+      "name": "Wuhan",
       "country": "China",
-      "code": "PEK",
+      "code": "WUH",
       "timezone": "Asia/Shanghai"
     },
     {
-      "name": "Chengdu",
+      "name": "Wuxi / Suzhou",
       "country": "China",
-      "code": "CTU",
+      "code": "WUX",
       "timezone": "Asia/Shanghai"
     },
     {
-      "name": "Dalian",
+      "name": "Xi'an",
       "country": "China",
-      "code": "DLC",
+      "code": "XIY",
       "timezone": "Asia/Shanghai"
     },
     {
-      "name": "Daxing",
-      "country": "China",
-      "code": "PKX",
-      "timezone": "Asia/Shanghai"
-    },
-    {
-      "name": "Harbin",
-      "country": "China",
-      "code": "HRB",
-      "timezone": "Asia/Shanghai"
-    },
-    {
-      "name": "Shanghai",
-      "country": "China",
-      "code": "PVG",
-      "timezone": "Asia/Shanghai"
-    },
-    {
-      "name": "Shenzhen",
-      "country": "China",
-      "code": "SZX",
-      "timezone": "Asia/Shanghai"
-    },
-    {
-      "name": "Weihai",
-      "country": "China",
-      "code": "WEH",
-      "timezone": "Asia/Shanghai"
-    },
-    {
-      "name": "Xiamen",
-      "country": "China",
-      "code": "XMN",
-      "timezone": "Asia/Shanghai"
-    },
-    {
-      "name": "Pula",
-      "country": "Croatia",
-      "code": "PUY",
-      "timezone": "Europe/Zagreb"
-    },
-    {
-      "name": "Split",
-      "country": "Croatia",
-      "code": "SPU",
-      "timezone": "Europe/Zagreb"
-    },
-    {
-      "name": "Larnaca",
-      "country": "Cyprus, Republic of",
-      "code": "LCA",
-      "timezone": "Asia/Nicosia"
-    },
-    {
-      "name": "Prague",
-      "country": "Czech Republic",
-      "code": "PRG",
-      "timezone": "Europe/Prague"
-    },
-    {
-      "name": "Copenhagen",
-      "country": "Denmark",
-      "code": "CPH",
-      "timezone": "Europe/Copenhagen"
-    },
-    {
-      "name": "Bordeaux",
-      "country": "France",
-      "code": "BOD",
-      "timezone": "Europe/Paris"
-    },
-    {
-      "name": "Lyon",
-      "country": "France",
-      "code": "LYS",
-      "timezone": "Europe/Paris"
-    },
-    {
-      "name": "Nice",
-      "country": "France",
-      "code": "NCE",
-      "timezone": "Europe/Paris"
-    },
-    {
-      "name": "Orly Field",
-      "country": "France",
-      "code": "ORY",
-      "timezone": "Europe/Paris"
-    },
-    {
-      "name": "Paris",
-      "country": "France",
-      "code": "CDG",
-      "timezone": "Europe/Paris"
-    },
-    {
-      "name": "Tbilisi",
-      "country": "Georgia",
-      "code": "TBS",
-      "timezone": "Asia/Tbilisi"
-    },
-    {
-      "name": "Berlin",
-      "country": "Germany",
-      "code": "BER",
-      "timezone": "Europe/Berlin"
-    },
-    {
-      "name": "Dusseldorf",
-      "country": "Germany",
-      "code": "DUS",
-      "timezone": "Europe/Berlin"
-    },
-    {
-      "name": "Frankfurt",
-      "country": "Germany",
-      "code": "FRA",
-      "timezone": "Europe/Berlin"
-    },
-    {
-      "name": "Hamburg",
-      "country": "Germany",
-      "code": "HAM",
-      "timezone": "Europe/Berlin"
-    },
-    {
-      "name": "Munich",
-      "country": "Germany",
-      "code": "MUC",
-      "timezone": "Europe/Berlin"
-    },
-    {
-      "name": "Alexandroupoli",
-      "country": "Greece",
-      "code": "AXD",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Astypalaia",
-      "country": "Greece",
-      "code": "JTY",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Chania",
-      "country": "Greece",
-      "code": "CHQ",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Chios",
-      "country": "Greece",
-      "code": "JKH",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Corfu",
-      "country": "Greece",
-      "code": "CFU",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Heraklion",
-      "country": "Greece",
-      "code": "HER",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Ikaria Island",
-      "country": "Greece",
-      "code": "JIK",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Kalymnos",
-      "country": "Greece",
-      "code": "JKL",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Karpathos",
-      "country": "Greece",
-      "code": "AOK",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Kastoria",
-      "country": "Greece",
-      "code": "KSO",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Kefalonia",
-      "country": "Greece",
-      "code": "EFL",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Kos",
-      "country": "Greece",
-      "code": "KGS",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Kozani",
-      "country": "Greece",
-      "code": "KZI",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Kythera",
-      "country": "Greece",
-      "code": "KIT",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Lemnos",
-      "country": "Greece",
-      "code": "LXS",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Milos",
-      "country": "Greece",
-      "code": "MLO",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Mykonos",
-      "country": "Greece",
-      "code": "JMK",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Mytilene",
-      "country": "Greece",
-      "code": "MJT",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Naxos",
-      "country": "Greece",
-      "code": "JNX",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Paros",
-      "country": "Greece",
-      "code": "PAS",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Rhodes",
-      "country": "Greece",
-      "code": "RHO",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Samos",
-      "country": "Greece",
-      "code": "SMI",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Santorini",
-      "country": "Greece",
-      "code": "JTR",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Skiathos City",
-      "country": "Greece",
-      "code": "JSI",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Syros",
-      "country": "Greece",
-      "code": "JSY",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Thessaloniki",
-      "country": "Greece",
-      "code": "SKG",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Zakynthos",
-      "country": "Greece",
-      "code": "ZTH",
-      "timezone": "Europe/Athens"
-    },
-    {
-      "name": "Ahmedabad",
-      "country": "India",
-      "code": "AMD",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Bagdogra",
-      "country": "India",
-      "code": "IXB",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Bengaluru",
-      "country": "India",
-      "code": "BLR",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Bhubaneswar",
-      "country": "India",
-      "code": "BBI",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Delhi",
-      "country": "India",
-      "code": "DEL",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Ghaziabad",
-      "country": "India",
-      "code": "HDO",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Goa",
-      "country": "India",
-      "code": "GOI",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Guwahati",
-      "country": "India",
-      "code": "GAU",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Kochi",
-      "country": "India",
-      "code": "COK",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Kolkata",
-      "country": "India",
-      "code": "CCU",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Lucknow",
-      "country": "India",
-      "code": "LKO",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Mopa",
-      "country": "India",
-      "code": "GOX",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Mumbai",
-      "country": "India",
-      "code": "BOM",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Patna",
-      "country": "India",
-      "code": "PAT",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Pune",
-      "country": "India",
-      "code": "PNQ",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Surat",
-      "country": "India",
-      "code": "STV",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Varanasi",
-      "country": "India",
-      "code": "VNS",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Vijayawada",
-      "country": "India",
-      "code": "VGA",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Ambon City",
+      "name": "Yogyakarta",
       "country": "Indonesia",
-      "code": "AMQ",
-      "timezone": "Asia/Jayapura"
-    },
-    {
-      "name": "Bandar Lampung",
-      "country": "Indonesia",
-      "code": "TKG",
+      "code": "YIA",
       "timezone": "Asia/Jakarta"
-    },
-    {
-      "name": "Banjarmasin",
-      "country": "Indonesia",
-      "code": "BDJ",
-      "timezone": "Asia/Makassar"
-    },
-    {
-      "name": "Banyuwangi",
-      "country": "Indonesia",
-      "code": "BWX",
-      "timezone": "Asia/Jakarta"
-    },
-    {
-      "name": "Berau",
-      "country": "Indonesia",
-      "code": "BEJ",
-      "timezone": "Asia/Makassar"
-    },
-    {
-      "name": "Bima",
-      "country": "Indonesia",
-      "code": "BMU",
-      "timezone": "Asia/Makassar"
-    },
-    {
-      "name": "Jayapura",
-      "country": "Indonesia",
-      "code": "DJJ",
-      "timezone": "Asia/Jayapura"
-    },
-    {
-      "name": "Kendari",
-      "country": "Indonesia",
-      "code": "KDI",
-      "timezone": "Asia/Makassar"
-    },
-    {
-      "name": "Kupang",
-      "country": "Indonesia",
-      "code": "KOE",
-      "timezone": "Asia/Makassar"
-    },
-    {
-      "name": "Malang",
-      "country": "Indonesia",
-      "code": "MLG",
-      "timezone": "Asia/Jakarta"
-    },
-    {
-      "name": "Palangkaraya",
-      "country": "Indonesia",
-      "code": "PKY",
-      "timezone": "Asia/Jakarta"
-    },
-    {
-      "name": "Palu",
-      "country": "Indonesia",
-      "code": "PLW",
-      "timezone": "Asia/Makassar"
-    },
-    {
-      "name": "Samarinda",
-      "country": "Indonesia",
-      "code": "AAP",
-      "timezone": "Asia/Makassar"
-    },
-    {
-      "name": "Sundapura",
-      "country": "Indonesia",
-      "code": "HLP",
-      "timezone": "Asia/Jakarta"
-    },
-    {
-      "name": "Surakarta",
-      "country": "Indonesia",
-      "code": "SOC",
-      "timezone": "Asia/Jakarta"
-    },
-    {
-      "name": "Tambolaka",
-      "country": "Indonesia",
-      "code": "TMC",
-      "timezone": "Asia/Makassar"
-    },
-    {
-      "name": "Tarakan",
-      "country": "Indonesia",
-      "code": "TRK",
-      "timezone": "Asia/Makassar"
-    },
-    {
-      "name": "Toraja",
-      "country": "Indonesia",
-      "code": "TRT",
-      "timezone": "Asia/Makassar"
-    },
-    {
-      "name": "Catania Fontanarossa",
-      "country": "Italy",
-      "code": "CTA",
-      "timezone": "Europe/Rome"
-    },
-    {
-      "name": "Milan",
-      "country": "Italy",
-      "code": "MXP",
-      "timezone": "Europe/Rome"
-    },
-    {
-      "name": "Milan (Linate)",
-      "country": "Italy",
-      "code": "LIN",
-      "timezone": "Europe/Rome"
-    },
-    {
-      "name": "Naples",
-      "country": "Italy",
-      "code": "NAP",
-      "timezone": "Europe/Rome"
-    },
-    {
-      "name": "Rome",
-      "country": "Italy",
-      "code": "FCO",
-      "timezone": "Europe/Rome"
-    },
-    {
-      "name": "Venice Marco Polo",
-      "country": "Italy",
-      "code": "VCE",
-      "timezone": "Europe/Rome"
-    },
-    {
-      "name": "Akita",
-      "country": "Japan",
-      "code": "AXT",
-      "timezone": "Asia/Tokyo"
-    },
-    {
-      "name": "Fukuoka",
-      "country": "Japan",
-      "code": "FUK",
-      "timezone": "Asia/Tokyo"
-    },
-    {
-      "name": "Fukushima",
-      "country": "Japan",
-      "code": "FKS",
-      "timezone": "Asia/Tokyo"
-    },
-    {
-      "name": "Hakodate",
-      "country": "Japan",
-      "code": "HKD",
-      "timezone": "Asia/Tokyo"
-    },
-    {
-      "name": "Hanamaki",
-      "country": "Japan",
-      "code": "HNA",
-      "timezone": "Asia/Tokyo"
-    },
-    {
-      "name": "Hiroshima",
-      "country": "Japan",
-      "code": "HIJ",
-      "timezone": "Asia/Tokyo"
-    },
-    {
-      "name": "Ishigaki",
-      "country": "Japan",
-      "code": "ISG",
-      "timezone": "Asia/Tokyo"
-    },
-    {
-      "name": "Kagoshima",
-      "country": "Japan",
-      "code": "KOJ",
-      "timezone": "Asia/Tokyo"
-    },
-    {
-      "name": "Kochi",
-      "country": "Japan",
-      "code": "KCZ",
-      "timezone": "Asia/Tokyo"
-    },
-    {
-      "name": "Komatsu",
-      "country": "Japan",
-      "code": "KMQ",
-      "timezone": "Asia/Tokyo"
-    },
-    {
-      "name": "Matsuyama",
-      "country": "Japan",
-      "code": "MYJ",
-      "timezone": "Asia/Tokyo"
-    },
-    {
-      "name": "Miyazaki",
-      "country": "Japan",
-      "code": "KMI",
-      "timezone": "Asia/Tokyo"
-    },
-    {
-      "name": "Nagoya",
-      "country": "Japan",
-      "code": "NGO",
-      "timezone": "Asia/Tokyo"
-    },
-    {
-      "name": "Niigata",
-      "country": "Japan",
-      "code": "KIJ",
-      "timezone": "Asia/Tokyo"
-    },
-    {
-      "name": "Oita",
-      "country": "Japan",
-      "code": "OIT",
-      "timezone": "Asia/Tokyo"
-    },
-    {
-      "name": "Okayama",
-      "country": "Japan",
-      "code": "OKJ",
-      "timezone": "Asia/Tokyo"
-    },
-    {
-      "name": "Saga",
-      "country": "Japan",
-      "code": "HSG",
-      "timezone": "Asia/Tokyo"
-    },
-    {
-      "name": "Sendai",
-      "country": "Japan",
-      "code": "SDJ",
-      "timezone": "Asia/Tokyo"
-    },
-    {
-      "name": "Shizuoka",
-      "country": "Japan",
-      "code": "FSZ",
-      "timezone": "Asia/Tokyo"
     },
     {
       "name": "Yonago",
@@ -1306,346 +652,10 @@
       "timezone": "Asia/Tokyo"
     },
     {
-      "name": "Tawau",
-      "country": "Malaysia",
-      "code": "TWU",
-      "timezone": "Asia/Kuala_Lumpur"
-    },
-    {
-      "name": "Malé",
-      "country": "Maldives",
-      "code": "MLE",
-      "timezone": "Indian/Maldives"
-    },
-    {
-      "name": "Chinggis Khaan",
-      "country": "Mongolia",
-      "code": "UBN",
-      "timezone": "Asia/Ulaanbaatar"
-    },
-    {
-      "name": "Mandalay",
-      "country": "Myanmar",
-      "code": "MDL",
-      "timezone": "Asia/Yangon"
-    },
-    {
-      "name": "Yangon",
-      "country": "Myanmar",
-      "code": "RGN",
-      "timezone": "Asia/Yangon"
-    },
-    {
-      "name": "Kathmandu",
-      "country": "Nepal",
-      "code": "KTM",
-      "timezone": "Asia/Kathmandu"
-    },
-    {
-      "name": "Amsterdam",
-      "country": "Netherlands",
-      "code": "AMS",
-      "timezone": "Europe/Amsterdam"
-    },
-    {
-      "name": "Auckland",
-      "country": "New Zealand",
-      "code": "AKL",
-      "timezone": "Pacific/Auckland"
-    },
-    {
-      "name": "Christchurch",
-      "country": "New Zealand",
-      "code": "CHC",
-      "timezone": "Pacific/Auckland"
-    },
-    {
-      "name": "Wellington",
-      "country": "New Zealand",
-      "code": "WLG",
-      "timezone": "Pacific/Auckland"
-    },
-    {
-      "name": "Muscat",
-      "country": "Oman",
-      "code": "MCT",
-      "timezone": "Asia/Muscat"
-    },
-    {
-      "name": "Warsaw",
-      "country": "Poland",
-      "code": "WAW",
-      "timezone": "Europe/Warsaw"
-    },
-    {
-      "name": "Lisbon",
-      "country": "Portugal",
-      "code": "LIS",
-      "timezone": "Europe/Lisbon"
-    },
-    {
-      "name": "Doha",
-      "country": "Qatar",
-      "code": "DOH",
-      "timezone": "Asia/Qatar"
-    },
-    {
-      "name": "Kannur",
-      "country": "Russian Federation",
-      "code": "CNN",
-      "timezone": "Asia/Kolkata"
-    },
-    {
-      "name": "Dammam",
-      "country": "Saudi Arabia",
-      "code": "DMM",
-      "timezone": "Asia/Riyadh"
-    },
-    {
-      "name": "Cape Town",
-      "country": "South Africa",
-      "code": "CPT",
-      "timezone": "Africa/Johannesburg"
-    },
-    {
-      "name": "Johannesburg",
-      "country": "South Africa",
-      "code": "JNB",
-      "timezone": "Africa/Johannesburg"
-    },
-    {
-      "name": "Busan",
-      "country": "South Korea",
-      "code": "PUS",
-      "timezone": "Asia/Seoul"
-    },
-    {
-      "name": "Cheongju",
-      "country": "South Korea",
-      "code": "CJJ",
-      "timezone": "Asia/Seoul"
-    },
-    {
-      "name": "Daegu",
-      "country": "South Korea",
-      "code": "TAE",
-      "timezone": "Asia/Seoul"
-    },
-    {
-      "name": "Gimpo",
-      "country": "South Korea",
-      "code": "GMP",
-      "timezone": "Asia/Seoul"
-    },
-    {
-      "name": "Gwangju",
-      "country": "South Korea",
-      "code": "KWJ",
-      "timezone": "Asia/Seoul"
-    },
-    {
-      "name": "Barcelona",
-      "country": "Spain",
-      "code": "BCN",
-      "timezone": "Europe/Madrid"
-    },
-    {
-      "name": "Madrid",
-      "country": "Spain",
-      "code": "MAD",
-      "timezone": "Europe/Madrid"
-    },
-    {
-      "name": "Malaga",
-      "country": "Spain",
-      "code": "AGP",
-      "timezone": "Europe/Madrid"
-    },
-    {
-      "name": "Palma",
-      "country": "Spain",
-      "code": "PMI",
-      "timezone": "Europe/Madrid"
-    },
-    {
-      "name": "Valencia",
-      "country": "Spain",
-      "code": "VLC",
-      "timezone": "Europe/Madrid"
-    },
-    {
-      "name": "Colombo",
-      "country": "Sri Lanka",
-      "code": "CMB",
-      "timezone": "Asia/Colombo"
-    },
-    {
-      "name": "Basel",
-      "country": "Switzerland",
-      "code": "BSL",
-      "timezone": "Europe/Paris"
-    },
-    {
-      "name": "Geneva",
-      "country": "Switzerland",
-      "code": "GVA",
-      "timezone": "Europe/Zurich"
-    },
-    {
-      "name": "Zurich",
-      "country": "Switzerland",
-      "code": "ZRH",
-      "timezone": "Europe/Zurich"
-    },
-    {
-      "name": "Kaohsiung",
-      "country": "Taiwan, China",
-      "code": "KHH",
-      "timezone": "Asia/Taipei"
-    },
-    {
-      "name": "Lampang",
-      "country": "Thailand",
-      "code": "LPT",
-      "timezone": "Asia/Bangkok"
-    },
-    {
-      "name": "Myitkyina",
-      "country": "Thailand",
-      "code": "HGN",
-      "timezone": "Asia/Bangkok"
-    },
-    {
-      "name": "Pattaya",
-      "country": "Thailand",
-      "code": "UTP",
-      "timezone": "Asia/Bangkok"
-    },
-    {
-      "name": "Sukhothai",
-      "country": "Thailand",
-      "code": "THS",
-      "timezone": "Asia/Bangkok"
-    },
-    {
-      "name": "Trat",
-      "country": "Thailand",
-      "code": "TDX",
-      "timezone": "Asia/Bangkok"
-    },
-    {
-      "name": "Dili",
-      "country": "Timor Leste",
-      "code": "DIL",
-      "timezone": "Asia/Dili"
-    },
-    {
-      "name": "Istanbul",
-      "country": "Turkey",
-      "code": "IST",
-      "timezone": "Europe/Istanbul"
-    },
-    {
-      "name": "Abu Dhabi",
-      "country": "United Arab Emirates",
-      "code": "AUH",
-      "timezone": "Asia/Dubai"
-    },
-    {
-      "name": "Dubai",
-      "country": "United Arab Emirates",
-      "code": "DXB",
-      "timezone": "Asia/Dubai"
-    },
-    {
-      "name": "Sharjah",
-      "country": "United Arab Emirates",
-      "code": "SHJ",
-      "timezone": "Asia/Dubai"
-    },
-    {
-      "name": "Birmingham",
-      "country": "United Kingdom",
-      "code": "BHX",
-      "timezone": "Europe/London"
-    },
-    {
-      "name": "Bristol",
-      "country": "United Kingdom",
-      "code": "BRS",
-      "timezone": "Europe/London"
-    },
-    {
-      "name": "Edinburgh",
-      "country": "United Kingdom",
-      "code": "EDI",
-      "timezone": "Europe/London"
-    },
-    {
-      "name": "Glasgow",
-      "country": "United Kingdom",
-      "code": "GLA",
-      "timezone": "Europe/London"
-    },
-    {
-      "name": "London (Gatwick)",
-      "country": "United Kingdom",
-      "code": "LGW",
-      "timezone": "Europe/London"
-    },
-    {
-      "name": "London (Heathrow)",
-      "country": "United Kingdom",
-      "code": "LHR",
-      "timezone": "Europe/London"
-    },
-    {
-      "name": "London (Luton)",
-      "country": "United Kingdom",
-      "code": "LTN",
-      "timezone": "Europe/London"
-    },
-    {
-      "name": "Manchester",
-      "country": "United Kingdom",
-      "code": "MAN",
-      "timezone": "Europe/London"
-    },
-    {
-      "name": "Houston",
-      "country": "United States of America",
-      "code": "IAH",
-      "timezone": "America/Chicago"
-    },
-    {
-      "name": "Los Angeles",
-      "country": "United States of America",
-      "code": "LAX",
-      "timezone": "America/Los_Angeles"
-    },
-    {
-      "name": "New York",
-      "country": "United States of America",
-      "code": "JFK",
-      "timezone": "America/New_York"
-    },
-    {
-      "name": "New York (Newark)",
-      "country": "United States of America",
-      "code": "EWR",
-      "timezone": "America/New_York"
-    },
-    {
-      "name": "San Francisco",
-      "country": "United States of America",
-      "code": "SFO",
-      "timezone": "America/Los_Angeles"
-    },
-    {
-      "name": "Seattle / Tacoma",
-      "country": "United States of America",
-      "code": "SEA",
-      "timezone": "America/Los_Angeles"
+      "name": "Zhengzhou",
+      "country": "China",
+      "code": "CGO",
+      "timezone": "Asia/Shanghai"
     }
   ]
 }

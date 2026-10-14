@@ -12,30 +12,48 @@ cd ~/Documents/auto-chope-seat
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 .venv/bin/python -m playwright install chromium
-.venv/bin/python app.py
+.venv/bin/python app.py --window
 ```
 
-Open http://127.0.0.1:8766. Stop with Ctrl+C in the terminal.
+`--window` opens the app in its own native macOS window (pywebview/WebKit);
+closing the window quits the app. Without it, open http://127.0.0.1:8766 in a
+browser (or use `--open`) and stop with Ctrl+C or the **Quit app** button.
+
+### Double-clickable laptop app
+
+```sh
+./scripts/build_mac_app.sh            # creates ~/Applications/auto-chope-seat.app
+./scripts/build_mac_app.sh /Applications  # optional other destination
+```
+
+Double-click **auto-chope-seat** (Finder, Spotlight or the Dock). It opens the
+app window; launching again brings the existing window to the front. Closing
+the window quits the app — it asks first if a retrieval is scheduled, and is
+refused while the click is in progress. Output goes to `~/Library/Logs/auto-chope-seat.log`. The app embeds this
+project's path, so rebuild it after moving the folder. **Quit app** stops the
+server and cancels any pending retrieval (refused while a click is in progress).
 
 1. Enter your PNR and the exact departure station label used by Scoot.
    PNR letters are automatically converted to uppercase when typed or pasted;
    the server also normalizes them before filling Scoot's form.
-   Departure suggestions contain 274 unique stations extracted from the
-   [official Scoot homepage](https://www.flyscoot.com/en)'s From picker on
-   2026-10-13, stored in `stations.json` with source metadata.
+   Departure suggestions contain the 109 stations offered by ChopeMySeat's
+   own Departing dropdown (extracted 2026-10-14), stored in `stations.json`
+   with source metadata. Names match ChopeMySeat's labels exactly, e.g.
+   `Sydney(Kingsford Smith)`. Refresh the list when Scoot changes it with
+   `.venv/bin/python scripts/fetch_stations.py` (opens Chrome, reads the
+   dropdown, never fills or clicks anything).
    Search by station name, country or IATA code. Selecting a suggestion passes
    its original station name, without the display code/country, to ChopeMySeat.
-   The public list includes connecting stations and grouped cities; it does not
-   establish eligibility in the staff-travel system. Exact live label matching
-   still applies. Manual station entry remains available for label differences.
+   The app selects the dropdown option with the same name, or failing that the
+   same IATA code, and verifies the label it selected. Stations not offered by
+   ChopeMySeat fail preparation without clicking.
    Source metadata remains in the dataset and documentation, not in the form.
 2. The departure airport's IANA timezone is automatically selected, e.g.
    `Asia/Singapore`, `Asia/Taipei`, `Asia/Bangkok`, or `Australia/Sydney`.
    Mapping uses the `airportsdata` IATA dataset, not the public site's country
-   label (some labels are inconsistent). Explicit mappings cover the Tokyo
-   city group (`TYO`, Asia/Tokyo), Phnom Penh (`PNH`, Asia/Phnom_Penh),
-   Banyuwangi (`BWX`, Asia/Jakarta), and Toraja (`TRT`, Asia/Makassar).
-   All 274 current entries have a timezone. Changing to an unrecognized station
+   label. Explicit mappings cover codes missing from that dataset, e.g. the
+   Tokyo city group (`TYO`, Asia/Tokyo).
+   All 109 current entries have a timezone. Changing to an unrecognized station
    clears the previous timezone and requires manual selection; the server
    rejects a mismatched timezone for known stations. DST is resolved at the
    scheduled date, not as a fixed UTC offset.
@@ -47,10 +65,23 @@ Open http://127.0.0.1:8766. Stop with Ctrl+C in the terminal.
    to the airport timezone when selected, unless manually edited. This is an
    editable initial value, not a ticking clock; choose a future time before
    scheduling, as past/current elapsed times are rejected.
-4. Prepare the browser. Review the PNR and departure on the official site.
-5. Schedule. Keep the computer awake, app running and browser open.
-6. The app clicks **Retrieve Booking once**, then reads visible result text for
-   up to five seconds without clicking or refreshing. A displayed queue number
+4. Click **Confirm** (at least 90 seconds ahead). Nothing opens yet; the page
+   shows which browser will be used and when it launches.
+5. Five minutes before the retrieval time the app launches your macOS default
+   browser (a separate automation window with a fresh profile), loads
+   https://chopemyseat.flyscoot.com/home, waits until the form (PNR, Departing and Retrieve Booking) is ready, fills
+   the PNR and departure and stands by. Chromium-based defaults (Chrome, Edge,
+   Brave, Arc, Vivaldi, Opera) are driven directly; Safari and Firefox cannot be
+   automated, so the bundled Chromium is used and the page says so. If the
+   site or form is unavailable, preparation retries every 30 seconds until one
+   minute before the retrieval time, then gives up without clicking. While
+   standing by, the form is re-checked every 30 seconds. Use **Show browser**
+   to review the entries; Cancel works until the click starts. While scheduled,
+   macOS `caffeinate` prevents idle sleep (keep the laptop plugged in and the
+   lid open — closing the lid still sleeps the Mac).
+6. At the retrieval time the app clicks **Retrieve Booking once**, then reads visible result text for
+   up to five seconds without clicking or refreshing. If Scoot is slow to
+   acknowledge the click, it is still treated as sent and never repeated. A displayed queue number
    (e.g. `Queue: TRY-1`) produces an `airport_queue` status: stop and attend the
    airport staff-travel counter in person to queue and wait. An explicit
    unsuccessful web check-in message also stops automation. No retries or further
@@ -227,17 +258,13 @@ It does not automatically select seats, pay, or complete check-in.
 
 ## Local app privacy
 
-The panel below the form shows JPEG captures of the actual controlled browser,
-including filled entries and the result, refreshed about once per second.
-This is read-only, not a cross-origin iframe or a second Scoot session. Captures
-remain in memory, use a token-protected uncached local endpoint, and may contain
-personal information; do not share your app screen. Preview work pauses in the
-last three seconds before submission to prioritize the timed click.
+The local app has no screenshot preview; review the entries in the visible
+Chrome window itself. No screenshots of booking data are taken.
 
 After retrieval the controlled browser's result tab is brought to the front.
 If Scoot opens a popup, that tab is used; otherwise its existing tab is kept.
 The app does not copy result URLs into another browser or duplicate submissions,
-because that can lose the booking session. Use **Show Scoot browser / result tab**
+because that can lose the booking session. Use **Show Scoot browser**
 for manual continuation. It does not interact with passenger/passport forms.
 
 PNR stays in memory and is filled into the official Scoot website only when

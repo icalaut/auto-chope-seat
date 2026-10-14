@@ -1,3 +1,5 @@
+import sys
+from pathlib import Path
 import time
 import json
 import threading
@@ -15,12 +17,14 @@ from app import BookingForm, Controller, booking_input, scheduled_timestamp, dep
 class InputTests(unittest.TestCase):
     def test_departure_dataset(self):
         data = json.loads((app.ROOT / "stations.json").read_text())
-        self.assertEqual(data["source"], "https://www.flyscoot.com/en")
-        self.assertEqual(len(data["stations"]), 274)
-        self.assertEqual(len({station["code"] for station in data["stations"]}), 274)
+        self.assertEqual(data["source"], "https://chopemyseat.flyscoot.com/home")
+        self.assertEqual(len(data["stations"]), 109)
+        self.assertEqual(len({station["code"] for station in data["stations"]}), 109)
         self.assertEqual(next(station["name"] for station in data["stations"] if station["code"] == "SIN"), "Singapore")
         self.assertEqual(next(station["name"] for station in data["stations"] if station["code"] == "BKK"), "Bangkok (Suvarnabhumi)")
-        self.assertTrue(all(station.get("timezone") for station in data["stations"]))
+        self.assertEqual(next(station["name"] for station in data["stations"] if station["code"] == "SYD"), "Sydney(Kingsford Smith)")
+        for code in ["BTU", "MPH", "DLI", "HEL", "TNA", "KHN", "NGB", "WUX"]:
+            self.assertIn(code, {station["code"] for station in data["stations"]})
         zones = json.loads((app.ROOT / "timezones.json").read_text())
         self.assertTrue(all(station["timezone"] in zones for station in data["stations"]))
     def test_booking(self):
@@ -34,10 +38,10 @@ class InputTests(unittest.TestCase):
 
     def test_departure_timezone_mapping(self):
         for station, zone in [("Singapore", "Asia/Singapore"), ("tpe", "Asia/Taipei"),
-                              ("Sydney", "Australia/Sydney"), ("Perth", "Australia/Perth"),
-                              ("JFK", "America/New_York"), ("TYO", "Asia/Tokyo"),
-                              ("PNH", "Asia/Phnom_Penh"), ("BWX", "Asia/Jakarta"),
-                              ("TRT", "Asia/Makassar"), ("CNN", "Asia/Kolkata")]:
+                              ("Sydney(Kingsford Smith)", "Australia/Sydney"), ("Perth", "Australia/Perth"),
+                              ("TYO", "Asia/Tokyo"), ("HEL", "Europe/Helsinki"),
+                              ("Bintulu", "Asia/Kuching"), ("Wuxi / Suzhou", "Asia/Shanghai"),
+                              ("Dalat", "Asia/Ho_Chi_Minh")]:
             with self.subTest(station=station):
                 self.assertEqual(station_timezone(station), zone)
         self.assertIsNone(station_timezone("Unknown station"))
@@ -74,9 +78,29 @@ class InputTests(unittest.TestCase):
             with self.subTest(date=date, clock=clock), self.assertRaises(ValueError):
                 scheduled_timestamp({"date": date, "time": clock, "timezone": "Asia/Singapore"})
 
-    def test_cannot_schedule_before_prepare(self):
-        with self.assertRaises(ValueError):
-            Controller().submit("schedule", {})
+    def test_date_must_be_airport_today_or_later(self):
+        # 2027-01-02 00:30 in Sydney is still 2027-01-01 in Singapore.
+        now = datetime(2027, 1, 1, 13, 30, tzinfo=timezone.utc).timestamp()
+        with self.assertRaisesRegex(ValueError, r"today \(Australia/Sydney\) or later"):
+            scheduled_timestamp({"date": "2027-01-01", "time": "23:59:59", "timezone": "Australia/Sydney"}, now=now)
+        self.assertGreater(scheduled_timestamp({"date": "2027-01-01", "time": "23:59:59", "timezone": "Asia/Singapore"}, now=now), now)
+
+    def test_frontend_date_minimum_is_today_onward(self):
+        script = (Path(app.ROOT) / "app.js").read_text()
+        self.assertIn("dateInput.min = today", script)
+        self.assertIn("dateInput.value < today", script)
+
+    def test_schedule_requires_preparation_lead(self):
+        from zoneinfo import ZoneInfo
+        soon = datetime.fromtimestamp(int(time.time()) + 30, ZoneInfo("Asia/Singapore"))
+        with self.assertRaisesRegex(ValueError, "at least"):
+            Controller().submit("schedule", {"pnr": "ABC123", "departure": "Singapore", "timezone": "Asia/Singapore",
+                                             "date": soon.strftime("%Y-%m-%d"), "time": soon.strftime("%H:%M:%S")})
+
+    def test_prepare_action_removed_and_show_browser_needs_open_browser(self):
+        for action in ["prepare", "show_browser"]:
+            with self.subTest(action=action), self.assertRaises(ValueError):
+                Controller().submit(action, {})
 
     def test_cancel_queued(self):
         controller = Controller()
@@ -90,6 +114,32 @@ FORM = """
 <label>Booking Reference (PNR)<input id="pnr"></label>
 <label>Departing<select><option>Choose</option><option>Singapore</option><option>Taipei</option></select></label>
 <button onclick="window.clicks=(window.clicks||0)+1">Retrieve Booking</button>
+"""
+
+
+LIVE_FORM = """
+<form aria-label="Staff travel Web Check-in Form">
+  <p>Booking Reference (PNR)</p>
+  <input aria-label="Booking Reference field" type="text" name="bookingReference" placeholder="Enter Your Booking Reference">
+  <p>Departing</p>
+  <input type="text" class="dropdown-input" aria-label="Dropdown input for home.form-departing" placeholder="Select Airport"
+         onclick="document.querySelector('.dropdown-option-container').hidden=false"
+         oninput="for (const o of document.querySelectorAll('.dropdown-option')) o.hidden = !o.dataset.name.toLowerCase().includes(this.value.toLowerCase())">
+  <div class="dropdown-option-container" aria-label="Dropdown options container for home.form-departing" hidden>
+    <div class="dropdown-option" data-name="Tokyo (All Airports)" aria-label="Dropdown option for home.form-departing"><div><div> Tokyo (All Airports) </div><div> Japan </div></div><div>TYO</div></div>
+    <div class="dropdown-option" data-name="Tokyo (Haneda)" aria-label="Dropdown option for home.form-departing"><div><div> Tokyo (Haneda) </div><div> Japan </div></div><div>HND</div></div>
+    <div class="dropdown-option" data-name="Singapore" aria-label="Dropdown option for home.form-departing"><div><div> Singapore </div><div> Singapore </div></div><div>SIN</div></div>
+    <div class="dropdown-option" data-name="Sydney(Kingsford Smith)" aria-label="Dropdown option for home.form-departing"><div><div> Sydney(Kingsford Smith) </div><div> Australia </div></div><div>SYD</div></div>
+  </div>
+  <input type="text" aria-label="Dropdown input for home.form-arriving" placeholder="Select Airport" style="display:none">
+  <button type="submit" aria-label="Retrieve Booking button" onclick="event.preventDefault();window.clicks=(window.clicks||0)+1">Retrieve Booking <img alt="Path icon"></button>
+</form>
+<script>
+for (const o of document.querySelectorAll('.dropdown-option')) o.addEventListener('click', () => {
+  document.querySelector('.dropdown-input').value = o.dataset.name;
+  document.querySelector('.dropdown-option-container').hidden = true;
+});
+</script>
 """
 
 
@@ -157,6 +207,50 @@ class BrowserTests(unittest.TestCase):
         self.form.prepare(self.booking)
         self.assertTrue(self.form.verify(self.booking).is_enabled())
 
+    def test_live_chopemyseat_dropdown(self):
+        # Mirrors the live Angular markup observed on 2026-10-14.
+        self.page.set_content(LIVE_FORM)
+        self.form.prepare({**self.booking, "departure": "Tokyo (All Airports)"})
+        self.assertEqual(self.page.get_by_role("textbox", name="Dropdown input for home.form-departing").input_value(), "Tokyo (All Airports)")
+        self.assertEqual(self.page.evaluate("window.clicks||0"), 0)
+        self.form.verify({**self.booking, "departure": "Tokyo (All Airports)"}).click()
+        self.assertEqual(self.page.evaluate("window.clicks"), 1)
+
+    def test_live_dropdown_matches_by_airport_code_when_label_differs(self):
+        self.page.set_content(LIVE_FORM)
+        booking = {**self.booking, "departure": "Sydney", "code": "SYD"}
+        self.form.prepare(booking)
+        self.assertEqual(booking["site_departure"], "Sydney(Kingsford Smith)")
+        self.assertTrue(self.form.verify(booking).is_enabled())
+        self.assertEqual(self.page.evaluate("window.clicks||0"), 0)
+
+    def test_booking_input_includes_station_code(self):
+        self.assertEqual(booking_input({"pnr": "ABC123", "departure": "Sydney(Kingsford Smith)", "timezone": "Australia/Sydney"})["code"], "SYD")
+        self.assertIsNone(booking_input({"pnr": "ABC123", "departure": "Custom station", "timezone": "UTC"})["code"])
+
+    def test_live_dropdown_unknown_station_fails_without_click(self):
+        self.page.set_content(LIVE_FORM)
+        with self.assertRaisesRegex(ValueError, "not offered by ChopeMySeat"):
+            self.form.prepare({**self.booking, "departure": "Adelaide"})
+        self.assertEqual(self.page.evaluate("window.clicks||0"), 0)
+
+    def test_hidden_duplicate_button_ignored(self):
+        self.page.set_content(FORM + '<button style="display:none">Retrieve Booking</button>')
+        self.form.prepare(self.booking)
+        self.assertTrue(self.form.verify(self.booking).is_visible())
+
+    def test_wait_until_ready_polls_for_late_button(self):
+        self.page.set_content("<p>Loading…</p>")
+        self.page.evaluate("""setTimeout(() => document.body.innerHTML = '<button aria-label="Retrieve Booking button">Retrieve Booking</button>', 600)""")
+        started = time.monotonic()
+        self.form.wait_until_ready(5)
+        self.assertLess(time.monotonic() - started, 3)
+
+    def test_wait_until_ready_times_out(self):
+        self.page.set_content("<p>Loading…</p>")
+        with self.assertRaisesRegex(TimeoutError, "did not appear"):
+            self.form.wait_until_ready(0.6)
+
     def test_queue_stops_without_action(self):
         self.page.set_content("<h2>Passenger(s) Check-in Status</h2><p>Queue: TRY-1 Economy</p>" + FORM)
         outcome = self.form.observe_result(timeout=0)
@@ -185,15 +279,6 @@ class BrowserTests(unittest.TestCase):
         self.page.evaluate("setTimeout(()=>document.body.innerHTML='<p>Queue: TRY-3</p>', 150)")
         self.assertEqual(self.form.observe_result(timeout=1)["status"], "airport_queue")
 
-    def test_preview_captures_controlled_entries(self):
-        self.form.prepare(self.booking)
-        controller = Controller()
-        controller.capture_preview(self.page)
-        self.assertTrue(controller.preview_image.startswith(b"\xff\xd8"))
-        self.assertIsNotNone(controller.snapshot()["preview_time"])
-        self.assertEqual(controller.snapshot()["preview_error"], "")
-        self.assertEqual(self.page.locator("#pnr").input_value(), "ABC123")
-        self.assertEqual(self.page.evaluate("window.clicks||0"), 0)
 
     def test_static_host_dropdowns_without_python_api(self):
         requests = []
@@ -212,13 +297,13 @@ class BrowserTests(unittest.TestCase):
 
         self.page.route("https://fixture.pages.dev/**", serve)
         self.page.goto("https://fixture.pages.dev/")
-        self.page.wait_for_function("document.querySelectorAll('#stations option').length === 274")
+        self.page.wait_for_function("document.querySelectorAll('#stations option').length === 109")
         self.page.wait_for_function("document.querySelector('#status').textContent === 'Hosted automation unavailable'")
         self.assertGreater(self.page.locator("#timezones option").count(), 100)
         self.page.locator("[name=departure]").fill("Singapore")
         self.assertEqual(self.page.locator("[name=timezone]").input_value(), "Asia/Singapore")
-        self.page.locator("[name=departure]").fill("Sydney (SYD) — Australia")
-        self.assertEqual(self.page.locator("[name=departure]").input_value(), "Sydney")
+        self.page.locator("[name=departure]").fill("Sydney(Kingsford Smith) (SYD) — Australia")
+        self.assertEqual(self.page.locator("[name=departure]").input_value(), "Sydney(Kingsford Smith)")
         self.assertEqual(self.page.locator("[name=timezone]").input_value(), "Australia/Sydney")
         self.assertTrue(self.page.locator("#schedule").is_disabled())
         self.assertEqual([path for path in requests if path.startswith("/api/")], ["/api/config"])
@@ -260,7 +345,7 @@ class BrowserTests(unittest.TestCase):
         self.assertIn("encrypted", self.page.locator("#privacy-note").inner_text())
         self.page.locator("[name=departure]").fill("Kochi (KCZ) — Japan")
         self.assertEqual(self.page.locator("[name=timezone]").input_value(), "Asia/Tokyo")
-        self.page.locator("[name=departure]").fill("Kochi")
+        self.page.locator("[name=departure]").fill("Unlisted station")
         self.assertEqual(self.page.locator("[name=timezone]").input_value(), "")
         self.page.locator("#browser-preview").click(position={"x": 20, "y": 20})
         self.assertEqual(actions, [])
@@ -279,29 +364,105 @@ class BrowserTests(unittest.TestCase):
         self.page.wait_for_function("!document.querySelector('#remote-controls').disabled")
         self.assertEqual(actions[-1]["key"], "Tab")
 
-    def test_closed_preview_reports_error_without_submission(self):
-        self.page.close()
-        controller = Controller()
-        controller.capture_preview(self.page)
-        self.assertIn("preview unavailable", controller.snapshot()["preview_error"])
-        self.assertEqual(controller.snapshot()["status"], "idle")
+
+
+MAINTENANCE = "<p>ChopeMySeat is currently under maintenance.</p>"
+
+
+class WindowTests(unittest.TestCase):
+    class FakeWindow:
+        def __init__(self):
+            self.confirm_close = False
+            self.localization = {}
+
+    def closing(self, status):
+        window = self.FakeWindow()
+        with patch.object(app.controller, "state", {"status": status, "message": "", "target": None}):
+            return app.window_closing(window), window
+
+    def test_close_confirms_only_when_retrieval_pending(self):
+        for status in ("scheduled", "preparing", "ready"):
+            result, window = self.closing(status)
+            self.assertIsNone(result)
+            self.assertTrue(window.confirm_close)
+            self.assertIn("cancel the scheduled retrieval", window.localization["global.quitConfirmation"])
+        result, window = self.closing("idle")
+        self.assertIsNone(result)
+        self.assertFalse(window.confirm_close)
+
+    def test_close_refused_while_clicking(self):
+        for status in ("submitting", "observing"):
+            self.assertIs(self.closing(status)[0], False)
+
+    def test_focus_without_window_reports_absent(self):
+        server = ThreadingHTTPServer(("127.0.0.1", 0), app.Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            port = server.server_port
+            with patch.object(app, "PORT", port), patch.object(app, "HOST", "127.0.0.1"):
+                import http.client
+                connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                connection.request("POST", "/api/focus", body=b"", headers={"Host": f"127.0.0.1:{app.PORT}"})
+                response = connection.getresponse()
+                body = json.loads(response.read())
+        finally:
+            server.shutdown()
+            server.server_close()
+        self.assertEqual(response.status, 404)
+        self.assertEqual(body, {"window": False})
+
+
+class DefaultBrowserTests(unittest.TestCase):
+    def test_disabled_uses_bundled_chromium(self):
+        with patch.object(app, "USE_DEFAULT_BROWSER", False):
+            self.assertEqual(app.default_browser(), {"name": "Chromium (bundled)", "executable": None, "note": ""})
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS LaunchServices lookup")
+    def test_detects_macos_default_browser(self):
+        info = app.default_browser()
+        self.assertTrue(info["name"])
+        if info["executable"]:
+            self.assertTrue(Path(info["executable"]).is_file())
+            self.assertEqual(info["note"], "")
+        else:
+            self.assertIn("cannot be automated", info["note"])
 
 
 class SchedulerTests(unittest.TestCase):
+    LEAD = 4
+
     def setUp(self):
         self.clicks = []
-        clicks = self.clicks
+        self.loads = []
+        self.maintenance_loads = 0
+        self.hang_assets = False
+        self.busy_click = False
+        self.release = threading.Event()
+        test = self
 
         class FixtureHandler(BaseHTTPRequestHandler):
             def log_message(self, format, *args):
                 pass
 
             def do_GET(self):
+                if self.path == "/hang":
+                    test.release.wait(30)
+                    return
                 if self.path == "/clicked":
-                    clicks.append(time.time())
+                    test.clicks.append(time.time())
                     content = b"clicked"
                 else:
-                    content = FORM.replace('window.clicks=(window.clicks||0)+1', "fetch('/clicked')").encode()
+                    test.loads.append(time.time())
+                    if len(test.loads) <= test.maintenance_loads:
+                        content = MAINTENANCE.encode()
+                    else:
+                        content = FORM.replace('window.clicks=(window.clicks||0)+1', "fetch('/clicked')")
+                        if test.busy_click:
+                            content = content.replace("fetch('/clicked')", "fetch('/clicked');const t=Date.now();while(Date.now()-t<2500);")
+                        if test.hang_assets:
+                            content += '<img src="/hang">'
+                        content = content.encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.end_headers()
@@ -310,71 +471,129 @@ class SchedulerTests(unittest.TestCase):
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), FixtureHandler)
         self.server_thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.server_thread.start()
-        self.site_patch = patch.object(app, "SITE", f"http://127.0.0.1:{self.server.server_port}/")
-        self.site_patch.start()
+        self.patches = [
+            patch.object(app, "SITE", f"http://127.0.0.1:{self.server.server_port}/"),
+            patch.object(app, "PREPARE_LEAD", self.LEAD),
+            patch.object(app, "RETRY_INTERVAL", 0.5),
+            patch.object(app, "RETRY_CUTOFF", 1),
+            patch.object(app, "MIN_SCHEDULE_LEAD", 1),
+            patch.object(app, "HEADLESS", True),
+            patch.object(app, "KEEP_AWAKE", False),
+            patch.object(app, "USE_DEFAULT_BROWSER", False),
+        ]
+        for item in self.patches:
+            item.start()
         self.controller = Controller()
         self.controller.worker.start()
         self.addCleanup(self.cleanup)
-        self.controller.submit("prepare", {"pnr": "ABC123", "departure": "Singapore", "timezone": "Asia/Singapore"})
-        self.wait_status("prepared")
 
     def cleanup(self):
+        self.release.set()
         self.controller.stop.set()
         self.controller.worker.join(timeout=10)
-        self.site_patch.stop()
+        for item in reversed(self.patches):
+            item.stop()
         self.server.shutdown()
         self.server.server_close()
         self.server_thread.join(timeout=2)
 
-    def wait_status(self, expected):
-        deadline = time.monotonic() + 20
+    def test_slow_click_acknowledgement_is_treated_as_clicked_once(self):
+        self.busy_click = True
+        with patch.object(app, "CLICK_TIMEOUT_MS", 1000):
+            due = self.schedule()
+            self.wait_status("submitted", timeout=25)
+        time.sleep(0.3)
+        self.assertEqual(len(self.clicks), 1)
+        self.assertGreaterEqual(self.clicks[0], due)
+
+    def test_slow_page_load_event_does_not_block_preparation(self):
+        self.hang_assets = True
+        due = self.schedule(ahead=8)
+        self.wait_status("submitted", timeout=25)
+        time.sleep(0.3)
+        self.assertEqual(len(self.clicks), 1)
+        self.assertGreaterEqual(self.clicks[0], due)
+
+    def wait_status(self, expected, timeout=20):
+        deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             state = self.controller.snapshot()
             if state["status"] == expected:
                 return state
-            if state["status"] == "error":
+            if state["status"] == "error" and expected != "error":
                 self.fail(state["message"])
             time.sleep(0.02)
         self.fail(f"Expected {expected}; got {self.controller.snapshot()}")
 
-    def schedule(self):
-        due = int(time.time()) + 3
+    def schedule(self, ahead=7):
+        due = int(time.time()) + ahead
         from zoneinfo import ZoneInfo
         local = datetime.fromtimestamp(due, ZoneInfo("Asia/Singapore"))
-        self.controller.submit("schedule", {"date": local.strftime("%Y-%m-%d"), "time": local.strftime("%H:%M:%S"), "timezone": "Asia/Singapore"})
+        self.controller.submit("schedule", {"pnr": "abc123", "departure": "Singapore", "timezone": "Asia/Singapore",
+                                            "date": local.strftime("%Y-%m-%d"), "time": local.strftime("%H:%M:%S")})
         self.wait_status("scheduled")
         return due
 
-    def test_exactly_one_scheduled_click_not_early(self):
+    def test_browser_opens_at_lead_fills_entries_then_clicks_once_on_time(self):
         due = self.schedule()
+        self.assertFalse(self.controller.snapshot()["browser_open"])
+        self.assertEqual(self.controller.snapshot()["prepare_at"], due - self.LEAD)
+        self.assertEqual(self.controller.snapshot()["browser_name"], "Chromium (bundled)")
+        self.assertIn("Chromium (bundled) launches at", self.controller.snapshot()["message"])
+        self.wait_status("ready")
+        self.assertGreaterEqual(self.loads[0], due - self.LEAD)
+        self.assertTrue(self.controller.snapshot()["browser_open"])
         self.assertEqual(self.clicks, [])
         self.wait_status("submitted")
         time.sleep(0.3)
         self.assertEqual(len(self.clicks), 1)
         self.assertGreaterEqual(self.clicks[0], due)
         self.assertLess(self.clicks[0] - due, 2)
+        self.assertTrue(self.controller.snapshot()["browser_open"])
 
-    def test_cancel_prevents_click(self):
+    def test_preparation_retries_until_form_available(self):
+        self.maintenance_loads = 1
+        due = self.schedule(ahead=8)
+        self.wait_status("submitted")
+        time.sleep(0.3)
+        self.assertGreaterEqual(len(self.loads), 2)
+        self.assertEqual(len(self.clicks), 1)
+        self.assertGreaterEqual(self.clicks[0], due)
+
+    def test_preparation_stops_before_cutoff_without_click(self):
+        self.maintenance_loads = 1000
+        due = self.schedule()
+        state = self.wait_status("error")
+        self.assertIn("nothing was clicked", state["message"])
+        self.assertGreaterEqual(len(self.loads), 2)
+        time.sleep(max(0, due - time.time()) + 0.5)
+        self.assertEqual(self.clicks, [])
+
+    def test_cancel_before_browser_opens(self):
         due = self.schedule()
         self.controller.submit("cancel", {})
         self.wait_status("idle")
         time.sleep(max(0, due - time.time()) + 0.3)
+        self.assertEqual(self.loads, [])
+        self.assertEqual(self.clicks, [])
+
+    def test_cancel_while_ready_prevents_click_and_closes_browser(self):
+        due = self.schedule()
+        self.wait_status("ready")
+        self.controller.submit("cancel", {})
+        self.wait_status("idle")
+        self.assertFalse(self.controller.snapshot()["browser_open"])
+        time.sleep(max(0, due - time.time()) + 0.3)
         self.assertEqual(self.clicks, [])
 
     def test_show_browser_does_not_submit(self):
+        self.schedule()
+        self.wait_status("ready")
         self.controller.submit("show_browser", {})
         time.sleep(0.2)
-        self.assertEqual(self.controller.snapshot()["status"], "prepared")
+        self.assertEqual(self.controller.snapshot()["status"], "ready")
         self.assertEqual(self.clicks, [])
 
-    def test_preview_does_not_repeat_retrieval(self):
-        self.schedule()
-        self.controller.preview_requested.set()
-        self.wait_status("submitted")
-        self.controller.preview_requested.set()
-        time.sleep(0.3)
-        self.assertEqual(len(self.clicks), 1)
-        self.assertIsNotNone(self.controller.preview_image)
 
 
 if __name__ == "__main__":
