@@ -267,6 +267,37 @@ class BrowserTests(unittest.TestCase):
         self.page.set_content("<h1>Unsuccessful staff web check-in</h1>")
         self.assertEqual(self.form.observe_result(timeout=0)["status"], "unsuccessful")
 
+    def test_not_open_yet_reports_flight_and_opening_time(self):
+        self.page.set_content("<p>Online check-in is not open yet! You can start checking in for your flight <b>TR 866</b> at <b>10-13-2026 22:00 (SGT)</b></p>"
+                              "<p>*Subject to seats availability.</p>" + FORM)
+        outcome = self.form.observe_result(timeout=0)
+        self.assertEqual(outcome["status"], "not_open_yet")
+        self.assertIn("flight TR 866 opens at 2026-10-13 22:00 (SGT)", outcome["message"])
+        self.assertEqual(self.page.evaluate("window.clicks||0"), 0)
+
+    def test_not_open_yet_without_detail(self):
+        self.page.set_content("<p>Online check-in is not open yet!</p>")
+        outcome = self.form.observe_result(timeout=0)
+        self.assertEqual(outcome["status"], "not_open_yet")
+        self.assertIn("did not state the opening time", outcome["message"])
+
+    def test_pnr_not_found_message(self):
+        self.page.set_content("<div role='alert'>Online check-in is currently not available for your booking. Please go to the counter.</div>" + FORM)
+        outcome = self.form.observe_result(timeout=0)
+        self.assertEqual(outcome["status"], "pnr_not_found")
+        self.assertIn("PNR not found", outcome["message"])
+        self.assertEqual(self.page.evaluate("window.clicks||0"), 0)
+
+    def test_departure_mismatch_message(self):
+        self.page.set_content("<div>Please ensure your Booking Reference (PNR) and Departing station are entered correctly. </div>" + FORM)
+        outcome = self.form.observe_result(timeout=0)
+        self.assertEqual(outcome["status"], "departure_mismatch")
+        self.assertIn("Departing station does not match", outcome["message"])
+
+    def test_delayed_departure_mismatch_recognized(self):
+        self.page.evaluate("setTimeout(()=>document.body.append('Please ensure your Booking Reference (PNR) and Departing station are entered correctly.'), 150)")
+        self.assertEqual(self.form.observe_result(timeout=1)["status"], "departure_mismatch")
+
     def test_generic_instructions_not_failure(self):
         self.page.set_content("<p>If your web check-in is unsuccessful</p><p>Please queue at the airport</p>")
         # The conditional help text is not an actual result.

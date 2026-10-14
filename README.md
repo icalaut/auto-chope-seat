@@ -84,7 +84,17 @@ server and cancels any pending retrieval (refused while a click is in progress).
    acknowledge the click, it is still treated as sent and never repeated. A displayed queue number
    (e.g. `Queue: TRY-1`) produces an `airport_queue` status: stop and attend the
    airport staff-travel counter in person to queue and wait. An explicit
-   unsuccessful web check-in message also stops automation. No retries or further
+   unsuccessful web check-in message also stops automation. Scoot's warnings are
+   reported as their own statuses:
+   - "Online check-in is not open yet! You can start checking in for your flight
+     TR 866 at 10-13-2026 22:00 (SGT)" → `not_open_yet` (PNR and departure are
+     correct but it is earlier than 3 hours before departure); the flight and
+     opening time are shown so you can schedule a new retrieval for it.
+   - "Online check-in is currently not available for your booking. Please go to
+     the counter." → `pnr_not_found` (the PNR was not found).
+   - "Please ensure your Booking Reference (PNR) and Departing station are
+     entered correctly." → `departure_mismatch` (PNR found, departure wrong).
+   No retries or further
    check-in actions occur in any outcome. Inspect the airline's response yourself;
    no seat/check-in success is inferred.
 

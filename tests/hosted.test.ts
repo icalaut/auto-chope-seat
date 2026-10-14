@@ -70,6 +70,9 @@ test("only scheduled on-time jobs may dispatch, never replay a recorded attempt"
 test("queues and unsuccessful results stop; help text and unknown pages never imply success", () => {
   assert.equal(resultStatus("Unsuccessful staff web check-in\nQueue: TRY-1").status, "airport_queue");
   assert.equal(resultStatus("Web check-in is unsuccessful").status, "unsuccessful");
+  assert.equal(resultStatus("Online check-in is not open yet! You can start checking in for your flight TR 866 at 10-13-2026 22:00 (SGT)").status, "not_open_yet");
+  assert.equal(resultStatus("Online check-in is currently not available for your booking. Please go to the counter.").status, "pnr_not_found");
+  assert.equal(resultStatus("Please ensure your Booking Reference (PNR) and Departing station are entered correctly.").status, "departure_mismatch");
   assert.match(resultStatus("If unsuccessful staff web check-in, attend the airport.").message, /No check-in or seat success is inferred/);
   assert.match(resultStatus("Unknown result").message, /No check-in or seat success is inferred/);
   assert.match(resultStatus("[Successful] Staff web check-in").message, /65 minutes/);

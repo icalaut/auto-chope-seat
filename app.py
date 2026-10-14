@@ -32,6 +32,10 @@ RETRY_INTERVAL = 30
 RETRY_CUTOFF = 60
 CLICK_TIMEOUT_MS = 10000
 RESULT_WATCH = 30
+PNR_NOT_FOUND = re.compile(r"online\s+check[- ]?in\s+is\s+currently\s+not\s+available\s+for\s+your\s+booking", re.I)
+NOT_OPEN_YET = re.compile(r"online\s+check[- ]?in\s+is\s+not\s+open\s+yet", re.I)
+NOT_OPEN_DETAIL = re.compile(r"for\s+your\s+flight\s+(?P<flight>[A-Z0-9]{2}\s*\d{1,4})\s+at\s+(?P<when>\d{1,2}-\d{1,2}-\d{4}\s+\d{1,2}:\d{2})(?:\s*\((?P<zone>[A-Z]{2,5})\))?", re.I)
+DEPARTURE_MISMATCH = re.compile(r"ensure\s+your\s+booking\s+reference\s*\(PNR\)\s+and\s+departing\s+station\s+are\s+entered\s+correctly", re.I)
 MIN_SCHEDULE_LEAD = 90
 HEADLESS = False
 KEEP_AWAKE = True
@@ -165,6 +169,22 @@ def scheduled_timestamp(data: dict, now: float | None = None) -> float:
 DEPARTURE_OPTION = '[aria-label^="Dropdown option for"][aria-label*="departing"]'
 
 
+
+def not_open_message(text: str) -> str:
+    detail = NOT_OPEN_DETAIL.search(text)
+    if not detail:
+        opens = "Scoot did not state the opening time"
+    else:
+        flight = re.sub(r"\s+", " ", detail["flight"].upper())
+        try:
+            when = datetime.strptime(re.sub(r"\s+", " ", detail["when"]), "%m-%d-%Y %H:%M").strftime("%Y-%m-%d %H:%M")
+        except ValueError:
+            when = detail["when"]
+        zone = f" ({detail['zone'].upper()})" if detail["zone"] else ""
+        opens = f"Check-in for flight {flight} opens at {when}{zone}"
+    return (f"Online check-in is not open yet. {opens}. Web check-in is available between 3 hours and 65 minutes before departure; "
+            "schedule a new retrieval for the opening time. No further actions or retries will be made.")
+
 class BookingForm:
     def __init__(self, page: Page):
         self.page = page
@@ -270,6 +290,14 @@ class BookingForm:
             if re.search(r"^\s*(?:unsuccessful\s+(?:staff\s+)?web\s+check[- ]?in|(?:staff\s+)?web\s+check[- ]?in\s+(?:is\s+|was\s+)?unsuccessful)\b", text, re.I | re.M):
                 return {"status": "unsuccessful",
                         "message": "Scoot reports unsuccessful web check-in. Automation has stopped. Follow the airline's airport counter instructions; no further actions or retries will be made."}
+            if NOT_OPEN_YET.search(text):
+                return {"status": "not_open_yet", "message": not_open_message(text)}
+            if PNR_NOT_FOUND.search(text):
+                return {"status": "pnr_not_found",
+                        "message": "Scoot says online check-in is not available for this booking (Booking Reference/PNR not found). Please go to the airport counter. No further actions or retries will be made."}
+            if DEPARTURE_MISMATCH.search(text):
+                return {"status": "departure_mismatch",
+                        "message": "Scoot found the Booking Reference (PNR) but the Departing station does not match it. Check the departure station for this booking. No further actions or retries will be made."}
             if time.monotonic() >= deadline or (stop is not None and stop.is_set()):
                 return {"status": "submitted",
                         "message": "Retrieve Booking was clicked once. No recognized queue or failure result was detected during the brief read-only check. Review the Scoot browser yourself; no further actions or retries will be made, and no seat/check-in success is inferred."}

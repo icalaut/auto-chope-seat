@@ -104,7 +104,7 @@ export class BookingScheduler extends DurableObject<Env> {
       status: this.job.status, message: this.job.message,
       target: this.job.target ? this.job.target / 1000 : null,
       now: Date.now() / 1000, mode: "cloud", manual_available: Boolean(this.job.session &&
-        Date.now() < this.job.expires && ["submitted", "airport_queue", "unsuccessful", "uncertain"].includes(this.job.status)),
+        Date.now() < this.job.expires && ["submitted", "airport_queue", "unsuccessful", "not_open_yet", "pnr_not_found", "departure_mismatch", "uncertain"].includes(this.job.status)),
       preview_available: Boolean(this.job.session && Date.now() < this.job.expires),
       session_expires: this.job.expires / 1000
     };
