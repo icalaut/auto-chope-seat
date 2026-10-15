@@ -18,6 +18,7 @@ python3 -m venv .venv
 `--window` opens the app in its own native macOS window (pywebview/WebKit);
 closing the window quits the app. Without it, open http://127.0.0.1:8766 in a
 browser (or use `--open`) and stop with Ctrl+C or the **Quit app** button.
+The app uses `icon.png` as its browser-tab icon and as the bundled macOS app icon.
 
 ### Double-clickable laptop app
 

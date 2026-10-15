@@ -12,9 +12,10 @@ import time
 import urllib.request
 import webbrowser
 from datetime import datetime, timezone
+from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import airportsdata
 from playwright.sync_api import Page, sync_playwright
@@ -51,13 +52,17 @@ CHROMIUM_BROWSERS = {
 ACTIVE_STATUSES = {"working", "scheduled", "preparing", "ready", "submitting", "observing"}
 WINDOW = None
 RETRIEVE_BUTTON = re.compile(r"^Retrieve Booking\b", re.I)
-AIRPORTS = airportsdata.load("IATA")
 STATION_TIMEZONE_OVERRIDES = {
     "TYO": "Asia/Tokyo",
     "PNH": "Asia/Phnom_Penh",
     "BWX": "Asia/Jakarta",
     "TRT": "Asia/Makassar",
 }
+
+
+@lru_cache(maxsize=1)
+def airport_data() -> dict:
+    return airportsdata.load("IATA")
 
 
 def default_browser() -> dict:
@@ -99,9 +104,10 @@ def default_browser() -> dict:
 
 def departure_stations() -> dict:
     data = json.loads((ROOT / "stations.json").read_text())
+    airports = airport_data()
     for station in data["stations"]:
         code = station["code"]
-        station["timezone"] = STATION_TIMEZONE_OVERRIDES.get(code) or AIRPORTS.get(code, {}).get("tz")
+        station["timezone"] = STATION_TIMEZONE_OVERRIDES.get(code) or airports.get(code, {}).get("tz")
         if station["timezone"]:
             ZoneInfo(station["timezone"])
     return data
@@ -566,13 +572,14 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/status":
             self.json_response(200, controller.snapshot())
         elif self.path == "/api/config":
-            self.json_response(200, {"token": TOKEN, "timezones": sorted(available_timezones())})
+            self.json_response(200, {"token": TOKEN})
         elif self.path == "/api/stations":
             self.json_response(200, departure_stations())
-        elif self.path in {"/", "/app.js", "/style.css", "/stations.json", "/timezones.json"}:
+        elif self.path in {"/", "/app.js", "/style.css", "/icon.png", "/stations.json", "/timezones.json"}:
             filename = "index.html" if self.path == "/" else self.path[1:]
             content_type = {"/": "text/html; charset=utf-8", "/app.js": "text/javascript", "/style.css": "text/css",
-                            "/stations.json": "application/json", "/timezones.json": "application/json"}[self.path]
+                            "/icon.png": "image/png", "/stations.json": "application/json",
+                            "/timezones.json": "application/json"}[self.path]
             self.send(200, (ROOT / filename).read_bytes(), content_type)
         else:
             self.json_response(404, {"error": "Not found."})
