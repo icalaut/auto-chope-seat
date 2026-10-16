@@ -1,0 +1,128 @@
+name: Release macOS app
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and notarize (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate release version and signing configuration
+        env:
+          CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          NOTARY_PRIVATE_KEY: ${{ secrets.APPLE_NOTARY_PRIVATE_KEY }}
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Release tags must use vMAJOR.MINOR.PATCH."
+            exit 1
+          fi
+          if [[ -z "$CERTIFICATE" || -z "$CERTIFICATE_PASSWORD" ||
+                -z "$NOTARY_KEY_ID" || -z "$NOTARY_ISSUER_ID" ||
+                -z "$NOTARY_PRIVATE_KEY" ]]; then
+            echo "::error::Configure the Apple certificate and notarization repository secrets before tagging a release."
+            exit 1
+          fi
+
+      - name: Import Developer ID certificate
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-build.txt
+
+      - name: Configure app code signing
+        run: |
+          IDENTITY="$(security find-identity -v -p codesigning |
+            sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -n 1)"
+          if [[ -z "$IDENTITY" ]]; then
+            echo "::error::No Developer ID Application signing identity was imported."
+            exit 1
+          fi
+          echo "PYINSTALLER_CODESIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+
+      - name: Build app bundle
+        run: python scripts/build_macos.py "$GITHUB_REF_NAME"
+
+      - name: Sign, package, and notarize
+        env:
+          NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          NOTARY_PRIVATE_KEY: ${{ secrets.APPLE_NOTARY_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          APP="dist/macos/${{ matrix.arch }}/auto-chope-seat.app"
+          IDENTITY="$(security find-identity -v -p codesigning |
+            sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -n 1)"
+          codesign --force --deep --options runtime --timestamp --sign "$IDENTITY" "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+          VERSION="${GITHUB_REF_NAME#v}"
+          DMG="auto-chope-seat-${GITHUB_REF_NAME}-${{ matrix.arch }}.dmg"
+          STAGING="$RUNNER_TEMP/auto-chope-seat-${{ matrix.arch }}"
+          mkdir -p "$STAGING"
+          cp -R "$APP" "$STAGING/"
+          ln -s /Applications "$STAGING/Applications"
+          hdiutil create -volname "auto-chope-seat $VERSION (${{ matrix.arch }})" \
+            -srcfolder "$STAGING" -ov -format UDZO "$DMG"
+
+          KEY_FILE="$RUNNER_TEMP/AuthKey_${NOTARY_KEY_ID}.p8"
+          printf '%s\n' "$NOTARY_PRIVATE_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          xcrun notarytool submit "$DMG" --key "$KEY_FILE" \
+            --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --wait
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          mkdir -p release
+          mv "$DMG" release/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: release/*.dmg
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/*.dmg \
+            --verify-tag --generate-notes \
+            --title "auto-chope-seat $GITHUB_REF_NAME"

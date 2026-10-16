@@ -23,6 +23,30 @@ app window to stop it; closing cancels a pending retrieval. If your Python
 installation does not include Tkinter, install a Python distribution that
 includes Tcl/Tk.
 
+## Installable Mac release
+
+Tagged releases are built as signed and notarized disk images for both Apple
+Silicon (`arm64`) and Intel (`x86_64`) Macs. Download the matching
+`auto-chope-seat-v1.0.0-arm64.dmg` or
+`auto-chope-seat-v1.0.0-x86_64.dmg` from the project's GitHub Releases page,
+open the disk image, and drag the app into Applications. The packaged app
+includes Chromium and does not require a separate Python installation.
+
+Before publishing a tagged release, configure these repository Actions secrets
+from an Apple Developer account:
+
+- `APPLE_CERTIFICATE_P12_BASE64`: base64-encoded Developer ID Application
+  certificate exported as a `.p12` file.
+- `APPLE_CERTIFICATE_PASSWORD`: password for that certificate.
+- `APPLE_NOTARY_KEY_ID`: App Store Connect API key ID.
+- `APPLE_NOTARY_ISSUER_ID`: App Store Connect API issuer ID.
+- `APPLE_NOTARY_PRIVATE_KEY`: contents of the corresponding `.p8` private key.
+
+Never commit or share signing credentials. Pushing a `vMAJOR.MINOR.PATCH` tag
+builds and notarizes both Mac versions, then publishes the GitHub release.
+The Intel build runs on a GitHub-hosted Intel Mac runner; the Apple Silicon
+build runs on an Apple Silicon runner.
+
 ## Use
 
 1. Enter your six-character booking reference (PNR) and select or enter the
@@ -31,7 +55,7 @@ includes Tcl/Tk.
    [official Scoot homepage](https://www.flyscoot.com/en)'s From picker on
    2026-10-13, stored in `stations.json` with source metadata. Search by
    station name, country, or IATA code. Choosing a suggestion fills its
-   original    station name; suggestions can be filtered by station name, country, or
+   original station name; suggestions can be filtered by station name, country, or
    IATA code. Manual station entry remains available.
 2. Confirm the departure airport timezone. It is selected automatically for
    known stations, using the IATA airport dataset and explicit mappings for

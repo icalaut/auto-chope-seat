@@ -1,6 +1,8 @@
 import json
+import os
 import queue
 import re
+import sys
 import threading
 import time
 import tkinter as tk
@@ -14,7 +16,12 @@ from playwright.sync_api import Page, sync_playwright
 
 
 SITE = "https://chopemyseat.flyscoot.com/"
-ROOT = Path(__file__).parent
+ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+if getattr(sys, "frozen", False):
+    BROWSER_CACHE = Path(sys.executable).resolve().parents[1] / "Resources" / "ms-playwright"
+    if not BROWSER_CACHE.is_dir():
+        raise RuntimeError("The bundled Chromium browser is missing. Reinstall the application.")
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(BROWSER_CACHE)
 AIRPORTS = airportsdata.load("IATA")
 STATION_TIMEZONE_OVERRIDES = {
     "TYO": "Asia/Tokyo",
