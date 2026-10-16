@@ -1,12 +1,12 @@
 import json
 import queue
 import re
-import secrets
 import threading
 import time
-from datetime import datetime, timezone
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import tkinter as tk
+from datetime import datetime
 from pathlib import Path
+from tkinter import messagebox, ttk
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 import airportsdata
@@ -14,10 +14,6 @@ from playwright.sync_api import Page, sync_playwright
 
 
 SITE = "https://chopemyseat.flyscoot.com/"
-HOST = "127.0.0.1"
-PORT = 8766
-ORIGIN = f"http://{HOST}:{PORT}"
-TOKEN = secrets.token_urlsafe(32)
 ROOT = Path(__file__).parent
 AIRPORTS = airportsdata.load("IATA")
 STATION_TIMEZONE_OVERRIDES = {
@@ -160,10 +156,6 @@ class Controller:
         self.stop = threading.Event()
         self.state = {"status": "idle", "message": "Prepare the booking form before scheduling.", "target": None}
         self.worker = threading.Thread(target=self.run, daemon=True)
-        self.preview_requested = threading.Event()
-        self.preview_image = None
-        self.preview_time = None
-        self.preview_error = ""
 
     def update(self, status: str, message: str, target: float | None = None):
         with self.lock:
@@ -171,21 +163,7 @@ class Controller:
 
     def snapshot(self) -> dict:
         with self.lock:
-            return {**self.state, "now": time.time(), "preview_time": self.preview_time,
-                    "preview_error": self.preview_error}
-
-    def capture_preview(self, page: Page):
-        try:
-            image = page.screenshot(type="jpeg", quality=65, timeout=1000)
-            with self.lock:
-                self.preview_image = image
-                self.preview_time = time.time()
-                self.preview_error = ""
-        except Exception as error:
-            with self.lock:
-                self.preview_error = f"Browser preview unavailable: {type(error).__name__}: {error}"
-        finally:
-            self.preview_requested.clear()
+            return {**self.state, "now": time.time()}
 
     def submit(self, action: str, data: dict):
         if action not in {"prepare", "schedule", "cancel", "show_browser"}:
@@ -230,7 +208,6 @@ class Controller:
                         page.goto(SITE, wait_until="domcontentloaded", timeout=15000)
                     except Exception as error:
                         self.update("error", f"Initial Scoot page load failed: {type(error).__name__}: {error}. You can try Prepare when the site is available.")
-                    self.capture_preview(page)
                     while not self.stop.is_set():
                         try:
                             action, payload = self.commands.get(timeout=0.02 if target else 0.2)
@@ -241,14 +218,10 @@ class Controller:
                                 target = None
                                 booking = None
                                 result_pages.clear()
-                                with self.lock:
-                                    self.preview_image = None
-                                    self.preview_time = None
                                 page.goto(SITE, wait_until="domcontentloaded", timeout=30000)
                                 page.get_by_role("button", name=re.compile(r"^Retrieve Booking\s*$", re.I)).wait_for(timeout=15000)
                                 form.prepare(payload)
                                 booking = payload
-                                self.capture_preview(page)
                                 self.update("prepared", "Form filled and verified. Review the browser, then schedule one retrieval.")
                             elif action == "schedule":
                                 if booking is None:
@@ -286,10 +259,7 @@ class Controller:
                                 visible_page = result_pages[-1] if result_pages else page
                                 visible_page.bring_to_front()
                                 outcome = BookingForm(visible_page).observe_result(stop=self.stop)
-                                self.capture_preview(visible_page)
                                 self.update(outcome["status"], outcome["message"])
-                            if self.preview_requested.is_set() and (target is None or target - time.time() > 3):
-                                self.capture_preview(result_pages[-1] if result_pages else page)
                         except Exception as error:
                             target = None
                             booking = None
@@ -301,91 +271,336 @@ class Controller:
             self.stop.set()
 
 
-controller = Controller()
+class DesktopApp:
+    def __init__(self, root: tk.Tk, controller: Controller):
+        self.root = root
+        self.controller = controller
+        self.state = controller.snapshot()
+        self.edited = False
+        self.closing = False
+        self.updating_fields = False
+        self.date_was_edited = False
+        self.time_was_edited = False
+        self.station_data = departure_stations()["stations"]
+        self.station_labels = {
+            f'{station["name"]} ({station["code"]}) — {station["country"]}': station
+            for station in self.station_data
+        }
+        self.station_names = {}
+        for station in self.station_data:
+            key = station["name"].casefold()
+            self.station_names[key] = station if key not in self.station_names else None
+            self.station_names[station["code"].casefold()] = station
 
+        root.title("auto-chope-seat")
+        root.minsize(620, 640)
+        root.geometry("760x760")
+        root.protocol("WM_DELETE_WINDOW", self.close)
 
-class Handler(BaseHTTPRequestHandler):
-    def log_message(self, format, *args):
-        pass
+        content = ttk.Frame(root, padding=20)
+        content.pack(fill="both", expand=True)
+        ttk.Label(content, text="auto-chope-seat", font=("TkDefaultFont", 18, "bold")).pack(anchor="w")
+        ttk.Label(
+            content,
+            text="Prepare your Scoot booking and schedule one Retrieve Booking click.",
+            wraplength=700,
+        ).pack(anchor="w", pady=(4, 14))
+        ttk.Label(
+            content,
+            text="Live integration is not yet verified: Scoot was under maintenance during development. "
+                 "The app stops if it cannot identify or verify the form. It does not bypass maintenance, "
+                 "CAPTCHA, queues, or check-in opening times.",
+            wraplength=700,
+            justify="left",
+        ).pack(anchor="w", pady=(0, 14))
 
-    def send(self, status: int, body: bytes, content_type: str):
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'")
-        self.end_headers()
-        self.wfile.write(body)
+        self.pnr = tk.StringVar()
+        self.departure = tk.StringVar()
+        self.timezone = tk.StringVar()
+        self.date = tk.StringVar()
+        self.clock = tk.StringVar()
+        self.timezone_note = tk.StringVar(value="Select a departure station to choose its airport timezone.")
+        self.error = tk.StringVar()
+        self.status = tk.StringVar(value=self.state["status"])
+        self.message = tk.StringVar(value=self.state["message"])
+        self.countdown = tk.StringVar()
 
-    def json_response(self, status: int, value: dict):
-        self.send(status, json.dumps(value).encode(), "application/json")
+        form = ttk.Frame(content)
+        form.pack(fill="x")
+        self._field(form, "Booking reference (PNR)", ttk.Entry(form, textvariable=self.pnr, width=40))
+        self.pnr.trace_add("write", self._field_changed)
 
-    def valid_host(self):
-        return self.headers.get("Host") == f"{HOST}:{PORT}"
+        station_box = ttk.Combobox(
+            form,
+            textvariable=self.departure,
+            values=tuple(self.station_labels),
+            width=55,
+        )
+        self.station_box = station_box
+        self._field(form, "Departing airport / station", station_box)
+        station_box.bind("<<ComboboxSelected>>", self._select_departure)
+        station_box.bind("<KeyRelease>", self._filter_departures, add="+")
+        self.departure.trace_add("write", self._departure_changed)
 
-    def do_GET(self):
-        if not self.valid_host():
-            self.json_response(403, {"error": "Invalid host."})
-        elif self.path == "/api/status":
-            self.json_response(200, controller.snapshot())
-        elif self.path == "/api/config":
-            self.json_response(200, {"token": TOKEN, "timezones": sorted(available_timezones())})
-        elif self.path == "/api/stations":
-            self.json_response(200, departure_stations())
-        elif self.path == "/api/preview":
-            if self.headers.get("X-App-Token") != TOKEN:
-                self.json_response(403, {"error": "Unauthorized preview request."})
-                return
-            controller.preview_requested.set()
-            with controller.lock:
-                image = controller.preview_image
-                message = controller.preview_error
-            if image is None:
-                self.json_response(503, {"error": message or "Waiting for the controlled browser preview."})
-            else:
-                self.send(200, image, "image/jpeg")
-        elif self.path in {"/", "/app.js", "/style.css", "/stations.json", "/timezones.json"}:
-            filename = "index.html" if self.path == "/" else self.path[1:]
-            content_type = {"/": "text/html; charset=utf-8", "/app.js": "text/javascript", "/style.css": "text/css",
-                            "/stations.json": "application/json", "/timezones.json": "application/json"}[self.path]
-            self.send(200, (ROOT / filename).read_bytes(), content_type)
-        else:
-            self.json_response(404, {"error": "Not found."})
+        timezone_box = ttk.Combobox(
+            form,
+            textvariable=self.timezone,
+            values=tuple(sorted(available_timezones())),
+            width=55,
+        )
+        self._field(form, "Departure airport timezone", timezone_box)
+        self.timezone.trace_add("write", self._timezone_changed)
+        ttk.Label(form, textvariable=self.timezone_note, wraplength=700, justify="left").pack(
+            anchor="w", pady=(0, 10)
+        )
 
-    def do_POST(self):
-        if not self.valid_host() or self.headers.get("Origin") != ORIGIN or self.headers.get("X-App-Token") != TOKEN:
-            self.json_response(403, {"error": "Unauthorized local request."})
+        self._field(form, "Retrieval date (airport local time, YYYY-MM-DD)",
+                    ttk.Entry(form, textvariable=self.date, width=24))
+        self._field(form, "Retrieval time (HH:mm:ss)",
+                    ttk.Entry(form, textvariable=self.clock, width=24))
+        self.date.trace_add("write", self._date_changed)
+        self.clock.trace_add("write", self._time_changed)
+        self.prefill_today()
+
+        actions = ttk.Frame(content)
+        actions.pack(fill="x", pady=(8, 10))
+        self.prepare_button = ttk.Button(actions, text="1. Prepare browser", command=self.prepare)
+        self.prepare_button.pack(side="left", padx=(0, 8))
+        self.schedule_button = ttk.Button(actions, text="2. Schedule retrieval", command=self.schedule)
+        self.schedule_button.pack(side="left", padx=(0, 8))
+        self.cancel_button = ttk.Button(actions, text="Cancel", command=self.cancel)
+        self.cancel_button.pack(side="left", padx=(0, 8))
+        self.browser_button = ttk.Button(actions, text="Show Scoot browser / result", command=self.show_browser)
+        self.browser_button.pack(side="left")
+
+        ttk.Separator(content).pack(fill="x", pady=10)
+        ttk.Label(content, textvariable=self.status, font=("TkDefaultFont", 12, "bold")).pack(anchor="w")
+        ttk.Label(content, textvariable=self.message, wraplength=700, justify="left").pack(
+            anchor="w", pady=(4, 2)
+        )
+        ttk.Label(content, textvariable=self.countdown).pack(anchor="w")
+        ttk.Label(content, textvariable=self.error, foreground="#b00020", wraplength=700,
+                  justify="left").pack(anchor="w", pady=(4, 8))
+
+        notes = (
+            "The Scoot browser is a separate window. Review the PNR and departure there before scheduling.",
+            "Use one device for this booking. Keep this app, the browser and computer awake. Exact delivery "
+            "time is not guaranteed; a click more than two seconds late is stopped.",
+            "If Scoot assigns a queue or reports unsuccessful web check-in, automation stops. Attend the "
+            "airport staff-travel counter in person as instructed. The app never retries or refreshes.",
+            "PNR is held in memory only and sent to Scoot when you prepare the browser. No booking data is "
+            "saved to files. Retrieve Booking does not reserve or confirm a seat; review the result yourself.",
+        )
+        for note in notes:
+            ttk.Label(content, text=note, wraplength=700, justify="left").pack(anchor="w", pady=(5, 0))
+
+        self.refresh()
+
+    @staticmethod
+    def _field(parent: ttk.Frame, label: str, widget: ttk.Widget):
+        ttk.Label(parent, text=label).pack(anchor="w")
+        widget.pack(fill="x", anchor="w", pady=(2, 8))
+
+    def _field_changed(self, *_):
+        if not self.updating_fields:
+            self.mark_edited()
+
+    def _date_changed(self, *_):
+        if not self.updating_fields:
+            self.date_was_edited = True
+            self.mark_edited()
+
+    def _time_changed(self, *_):
+        if not self.updating_fields:
+            self.time_was_edited = True
+            self.mark_edited()
+
+    def _departure_changed(self, *_):
+        if self.updating_fields:
             return
-        if self.path != "/api/action":
-            self.json_response(404, {"error": "Not found."})
+        station = self.station_labels.get(self.departure.get())
+        if station is None:
+            station = self.station_names.get(self.departure.get().strip().casefold())
+        self.updating_fields = True
+        try:
+            self.timezone.set(station["timezone"] if station else "")
+        finally:
+            self.updating_fields = False
+        self._set_timezone_note(station)
+        self.prefill_today(station["timezone"] if station else None)
+        self.mark_edited()
+
+    def _select_departure(self, _event=None):
+        station = self.station_labels.get(self.departure.get())
+        if station is None:
+            return
+        self.station_box.configure(values=tuple(self.station_labels))
+        self.updating_fields = True
+        try:
+            self.departure.set(station["name"])
+            self.timezone.set(station["timezone"])
+        finally:
+            self.updating_fields = False
+        self._set_timezone_note(station)
+        self.prefill_today(station["timezone"])
+        self.mark_edited()
+
+    def _filter_departures(self, _event=None):
+        query = self.departure.get().strip().casefold()
+        if not query:
+            self.station_box.configure(values=tuple(self.station_labels))
+            return
+        matches = (
+            label for label, station in self.station_labels.items()
+            if query in f'{station["name"]} {station["country"]} {station["code"]}'.casefold()
+        )
+        self.station_box.configure(values=tuple(matches))
+
+    def _timezone_changed(self, *_):
+        if self.updating_fields:
             return
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-            if not 0 < length <= 4096:
-                raise ValueError("Invalid request size.")
-            data = json.loads(self.rfile.read(length))
-            if not isinstance(data, dict):
-                raise ValueError("Expected an object.")
-            if controller.stop.is_set():
-                raise ValueError("Browser worker unavailable. Restart the app.")
-            controller.submit(data.get("action"), data)
-            self.json_response(202, {"accepted": True})
-        except (ValueError, ZoneInfoNotFoundError) as error:
-            self.json_response(400, {"error": str(error)})
+            ZoneInfo(self.timezone.get())
+            self.prefill_today(self.timezone.get())
+            self.timezone_note.set(f"Using {self.timezone.get()} for the retrieval date and time.")
+        except (ZoneInfoNotFoundError, ValueError):
+            self.timezone_note.set("Enter or select a valid IANA timezone for the departure airport.")
+        self.mark_edited()
+
+    def _set_timezone_note(self, station):
+        if station and station["timezone"]:
+            self.timezone_note.set(
+                f'Automatically selected {station["timezone"]} for {station["name"]} '
+                f'({station["code"]}). Daylight saving is applied for the scheduled date.'
+            )
+        else:
+            self.timezone_note.set(
+                "Station not recognized or its name is ambiguous. Select a full station suggestion "
+                "or enter its airport timezone manually; no timezone is assumed."
+            )
+
+    def prefill_today(self, timezone_name: str | None = None):
+        zone = ZoneInfo(timezone_name) if timezone_name else None
+        now = datetime.now(zone).astimezone() if zone is None else datetime.now(zone)
+        self.updating_fields = True
+        try:
+            if not self.date_was_edited:
+                self.date.set(now.strftime("%Y-%m-%d"))
+            if not self.time_was_edited:
+                self.clock.set(now.strftime("%H:%M:%S"))
+        finally:
+            self.updating_fields = False
+
+    def mark_edited(self):
+        if self.state["status"] == "prepared":
+            self.edited = True
+            self.message.set("Inputs changed. Prepare the browser again before scheduling.")
+            self.refresh_buttons()
+
+    def prepare(self):
+        self.error.set("")
+        try:
+            self.controller.submit("prepare", {
+                "pnr": self.pnr.get(),
+                "departure": self.departure.get(),
+                "timezone": self.timezone.get(),
+            })
+        except ValueError as error:
+            self.error.set(str(error))
+
+    def schedule(self):
+        self.error.set("")
+        if self.edited:
+            self.error.set("Inputs changed. Prepare the browser again before scheduling.")
+            return
+        try:
+            self.controller.submit("schedule", {
+                "date": self.date.get(),
+                "time": self.clock.get(),
+                "timezone": self.timezone.get(),
+            })
+        except (ValueError, KeyError) as error:
+            self.error.set(str(error))
+
+    def cancel(self):
+        self.error.set("")
+        try:
+            self.controller.submit("cancel", {})
+        except ValueError as error:
+            self.error.set(str(error))
+
+    def show_browser(self):
+        self.error.set("")
+        try:
+            self.controller.submit("show_browser", {})
+        except ValueError as error:
+            self.error.set(str(error))
+
+    def refresh_buttons(self):
+        status = self.state["status"]
+        busy = status in {"working", "submitting", "observing"}
+        self.prepare_button.configure(state="disabled" if busy or status == "scheduled" else "normal")
+        self.schedule_button.configure(
+            state="normal" if status == "prepared" and not self.edited else "disabled"
+        )
+        self.cancel_button.configure(
+            state="normal" if status in {"prepared", "scheduled"} else "disabled"
+        )
+        self.browser_button.configure(state="disabled" if busy else "normal")
+
+    def refresh(self):
+        if self.closing:
+            if not self.controller.worker.is_alive():
+                self.root.destroy()
+            else:
+                self.root.after(100, self.refresh)
+            return
+        current = self.controller.snapshot()
+        if current["status"] != self.state["status"] and current["status"] == "prepared":
+            self.edited = False
+        self.state = current
+        self.status.set(current["status"])
+        self.message.set(
+            "Inputs changed. Prepare the browser again before scheduling."
+            if self.edited and current["status"] == "prepared" else current["message"]
+        )
+        target = current.get("target")
+        self.countdown.set(
+            f'{max(0, target - current["now"]):.1f} seconds remaining'
+            if target and current["status"] == "scheduled" else ""
+        )
+        self.refresh_buttons()
+        self.root.after(250, self.refresh)
+
+    def close(self):
+        status = self.controller.snapshot()["status"]
+        if status == "scheduled" and not messagebox.askyesno(
+            "Cancel scheduled retrieval?",
+            "Closing the app cancels the pending retrieval. Close anyway?",
+            parent=self.root,
+        ):
+            return
+        if status in {"submitting", "observing"} and not messagebox.askyesno(
+            "Retrieval in progress",
+            "The click cannot be undone. Closing may interrupt result review. Close anyway?",
+            parent=self.root,
+        ):
+            return
+        self.closing = True
+        self.controller.stop.set()
+        self.prepare_button.configure(state="disabled")
+        self.schedule_button.configure(state="disabled")
+        self.cancel_button.configure(state="disabled")
+        self.browser_button.configure(state="disabled")
+        self.refresh()
 
 
 def main():
-    server = ThreadingHTTPServer((HOST, PORT), Handler)
+    root = tk.Tk()
+    controller = Controller()
+    DesktopApp(root, controller)
     controller.worker.start()
-    print(f"auto-chope-seat: {ORIGIN} — Ctrl+C to stop.", flush=True)
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print("Stopping; pending retrievals are cancelled.", flush=True)
-    finally:
-        controller.stop.set()
-        controller.worker.join(timeout=35)
-        server.server_close()
+    root.mainloop()
 
 
 if __name__ == "__main__":
