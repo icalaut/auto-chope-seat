@@ -8,3 +8,4 @@ dist/
 .dev.vars.*
 .env
 .env.*
+captures/

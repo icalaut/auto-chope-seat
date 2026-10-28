@@ -9,12 +9,13 @@ import subprocess
 import sys
 import threading
 import time
+import tempfile
 import urllib.request
-import webbrowser
 from datetime import datetime, timezone
 from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Callable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import airportsdata
@@ -31,8 +32,10 @@ ROOT = Path(__file__).parent
 PREPARE_LEAD = 300
 RETRY_INTERVAL = 30
 RETRY_CUTOFF = 60
-CLICK_TIMEOUT_MS = 10000
+MAX_CLICK_LATENESS_MS = 50
+FINAL_CHECK_LEAD = 2
 RESULT_WATCH = 30
+CAPTURE_ROOT = Path.home() / "Library/Application Support/auto-chope-seat/captures"
 PNR_NOT_FOUND = re.compile(r"online\s+check[- ]?in\s+is\s+currently\s+not\s+available\s+for\s+your\s+booking", re.I)
 CHECKIN_CLOSED = re.compile(r"online\s+check[- ]?in\s+is\s+already\s+closed\s+for\s+this\s+flight", re.I)
 NOT_OPEN_YET = re.compile(r"online\s+check[- ]?in\s+is\s+not\s+open\s+yet", re.I)
@@ -282,9 +285,223 @@ class BookingForm:
             raise ValueError("Retrieve Booking is not available. No click was made.")
         return button
 
-    def observe_result(self, timeout: float | None = None, stop: threading.Event | None = None) -> dict:
+    def show_click_target(self, booking: dict, target: float):
+        button = self.verify(booking)
+        button.evaluate("""(button, target) => {
+            let host = document.getElementById("auto-chope-seat-target");
+            if (!host) {
+                host = document.createElement("div");
+                host.id = "auto-chope-seat-target";
+                host.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:2147483647";
+                const root = host.attachShadow({mode:"open"});
+                root.innerHTML = `<style>
+                    * {box-sizing:border-box;pointer-events:none}
+                    #ring {position:fixed;border:3px solid #177bce;border-radius:12px}
+                    #label {position:fixed;top:12px;right:12px;max-width:340px;padding:12px 16px;
+                        border:2px solid #177bce;border-radius:10px;background:#fff;color:#152333;
+                        font:600 14px/1.5 system-ui;box-shadow:0 2px 12px #0002}
+                </style><div id="ring"></div><div id="label" role="status"></div>`;
+                document.documentElement.append(host);
+            }
+            const root = host.shadowRoot;
+            host.updatePosition = () => {
+                const rect = button.getBoundingClientRect();
+                Object.assign(root.getElementById("ring").style, {
+                    left: `${rect.left - 4}px`, top: `${rect.top - 4}px`,
+                    width: `${rect.width + 8}px`, height: `${rect.height + 8}px`
+                });
+            };
+            host.updatePosition();
+            if (!host.tracking) {
+                host.tracking = true;
+                addEventListener("scroll", () => host.updatePosition(), {passive:true, capture:true});
+                addEventListener("resize", () => host.updatePosition(), {passive:true});
+            }
+            root.getElementById("label").textContent = "NEXT: Retrieve Booking once at " +
+                new Date(target * 1000).toLocaleString([], {hour12:false}) +
+                " (computer time). Check app status for aborts.";
+            const state = Symbol.for("auto-chope-seat.target-marker");
+            if (!button[state]) {
+                button[state] = true;
+                button.addEventListener("click", () => {
+                    root.getElementById("label").textContent =
+                        "Click event observed. Waiting for Scoot; do not click again. No seat is confirmed.";
+                    root.getElementById("ring").style.borderColor = "#23834b";
+                }, {once:true});
+            }
+        }""", target)
+
+    def arm_click(self, booking: dict) -> dict:
+        button = self.verify(booking)
+        button.scroll_into_view_if_needed(timeout=1000)
+        pnr, departure, _ = self.fields()
+        button.evaluate("""button => {
+            button.addEventListener("click", () => {
+                if (typeof window.reportChopeClick === "function")
+                    window.reportChopeClick(Date.now());
+            }, {capture: true, once: true});
+        }""")
+        return {"pnr": pnr.element_handle(), "departure": departure.element_handle(),
+                "button": button.element_handle()}
+
+    def dispatch_click(self, fields: dict, booking: dict, target: float) -> dict:
+        # One browser task checks the actual dispatch deadline, then invokes the button
+        # without Playwright's actionability waits or a second protocol round-trip.
+        return self.page.evaluate("""({pnr, departure, button, booking, target, tolerance}) => {
+            const refuse = reason => ({clicked: false, reason});
+            if (![pnr, departure, button].every(element => element && element.isConnected))
+                return refuse("The prepared form was replaced or removed.");
+            if (pnr.value.trim().toUpperCase() !== booking.pnr)
+                return refuse("The browser PNR changed.");
+            const selected = departure.tagName === "SELECT"
+                ? departure.selectedOptions[0]?.textContent
+                : departure.tagName === "INPUT" ? departure.value : departure.innerText;
+            if (selected?.trim() !== (booking.site_departure || booking.departure))
+                return refuse("The departure station changed.");
+            const visible = element => {
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                return rect.width > 0 && rect.height > 0 &&
+                    style.visibility === "visible" && style.display !== "none";
+            };
+            const buttons = [...document.querySelectorAll("button, [role=button]")]
+                .filter(element => visible(element) &&
+                    /^Retrieve Booking\\b/i.test(element.getAttribute("aria-label") || element.innerText || ""));
+            if (buttons.length !== 1 || buttons[0] !== button ||
+                button.matches(":disabled") || button.getAttribute("aria-disabled") === "true")
+                return refuse("Retrieve Booking is unavailable or ambiguous.");
+            if (!visible(pnr) || !visible(departure))
+                return refuse("The booking fields are no longer visible.");
+            const rect = button.getBoundingClientRect();
+            const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+            if (!hit || !button.contains(hit))
+                return refuse("Retrieve Booking is covered or outside the viewport.");
+            const dispatched = Symbol.for("auto-chope-seat.dispatched");
+            if (button[dispatched])
+                return refuse("A click was already dispatched for this form.");
+            const dispatchedAt = Date.now();
+            const lateness = dispatchedAt - target;
+            if (lateness < 0 || lateness > tolerance)
+                return {clicked: false, reason: lateness < 0
+                    ? "The clock is earlier than the scheduled time."
+                    : "The 50 ms dispatch deadline was missed.", lateness_ms: lateness};
+            button[dispatched] = true;
+            let eventAt = null;
+            button.addEventListener("click", () => { eventAt = Date.now(); }, {capture: true, once: true});
+            button.click();
+            return {clicked: true, dispatched_at: dispatchedAt / 1000, lateness_ms: lateness,
+                event_at: eventAt === null ? null : eventAt / 1000,
+                handler_returned_at: Date.now() / 1000};
+        }""", {**fields, "booking": booking, "target": target * 1000,
+               "tolerance": MAX_CLICK_LATENESS_MS})
+
+    def passenger_form_visible(self) -> bool:
+        for frame in self.page.frames:
+            fields = frame.locator("input:visible, select:visible, [role=combobox]:visible")
+            names = fields.evaluate_all("""elements => elements.map(element => [
+                element.id, element.name, element.placeholder, element.getAttribute("aria-label"),
+                ...[...(element.labels || [])].map(label => label.innerText),
+                ...((element.getAttribute("aria-labelledby") || "").split(/\\s+/)
+                    .map(id => document.getElementById(id)?.textContent || ""))
+            ].filter(Boolean).join(" ")).join("\\n")""")
+            if re.search(r"passport", names, re.I) and re.search(r"nationality|citizenship", names, re.I):
+                return True
+        return False
+
+    def capture_passenger_form(self) -> dict:
+        CAPTURE_ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
+        folder = Path(tempfile.mkdtemp(prefix=datetime.now().strftime("%Y%m%d-%H%M%S-"), dir=CAPTURE_ROOT))
+        report = {"captured_at": datetime.now(timezone.utc).isoformat(),
+                  "note": "Passenger form detected, not confirmation of a seat. No fields entered or submitted.",
+                  "limitations": "Only currently loaded DOM options are available. Virtualized, dependent, or remote lists may be incomplete.",
+                  "frames": [], "errors": []}
+
+        def save_part(name: str, action: Callable):
+            try:
+                action()
+            except Exception as error:
+                report["errors"].append(f"{name}: {type(error).__name__}: {error}")
+
+        def save_archive():
+            session = self.page.context.new_cdp_session(self.page)
+            try:
+                snapshot = session.send("Page.captureSnapshot", {"format": "mhtml"})
+                (folder / "page.mhtml").write_text(snapshot["data"], encoding="utf-8")
+            finally:
+                session.detach()
+
+        try:
+            save_part("Screenshot", lambda: self.page.screenshot(
+                path=str(folder / "page.png"), full_page=True, timeout=10000))
+            save_part("HTML", lambda: (folder / "page.html").write_text(self.page.content(), encoding="utf-8"))
+            save_part("MHTML", save_archive)
+            for frame_index, frame in enumerate(self.page.frames):
+                if frame != self.page.main_frame:
+                    save_part(f"Frame {frame_index} HTML", lambda: (folder / f"frame-{frame_index}.html").write_text(
+                        frame.content(), encoding="utf-8"))
+                data = frame.evaluate("""() => {
+                    const label = element => element.getAttribute("aria-label") ||
+                        [...(element.labels || [])].map(label => label.innerText).join(" ") ||
+                        (element.getAttribute("aria-labelledby") || "").split(/\\s+/)
+                            .map(id => document.getElementById(id)?.textContent || "").join(" ") ||
+                        element.name || element.id;
+                    return {
+                        fields: [...document.querySelectorAll("input, select, textarea, [role=combobox]")].map(element => ({
+                            tag: element.tagName, type: element.type || null, id: element.id,
+                            name: element.name || null, label: label(element),
+                            placeholder: element.getAttribute("placeholder"), required: element.required ||
+                                element.getAttribute("aria-required") === "true",
+                            disabled: element.disabled || element.getAttribute("aria-disabled") === "true",
+                            options: element.tagName === "SELECT" ? [...element.options].map(option => ({
+                                label: option.textContent.trim(), value: option.value, disabled: option.disabled
+                            })) : null
+                        })),
+                        loaded_options: [...document.querySelectorAll('[role=option], .dropdown-option, [aria-label^="Dropdown option"]')]
+                            .map(option => ({label: option.textContent.trim(), value: option.getAttribute("data-value")}))
+                    };
+                }""")
+                data["expanded_dropdowns"] = []
+                # Expand only list widgets, never options or submit/continue buttons.
+                dropdowns = frame.locator(
+                    '[role=combobox]:not(select):visible, input[aria-haspopup="listbox"]:visible, '
+                    'input[aria-label^="Dropdown input"]:visible')
+                for index in range(dropdowns.count()):
+                    dropdown = dropdowns.nth(index)
+                    entry = {"index": index, "options": []}
+                    data["expanded_dropdowns"].append(entry)
+                    if not dropdown.is_enabled():
+                        entry["note"] = "Disabled; not opened."
+                        continue
+                    try:
+                        dropdown.click(timeout=2000)
+                        options = frame.locator('[role=option], .dropdown-option, [aria-label^="Dropdown option"]')
+                        options.filter(visible=True).first.wait_for(timeout=2000)
+                        entry["options"] = options.evaluate_all(
+                            "elements => elements.map(element => ({label: element.textContent.trim(), value: element.getAttribute('data-value')}))")
+                        dropdown.press("Escape", timeout=2000)
+                    except PlaywrightTimeout as error:
+                        entry["error"] = str(error)
+                        report["errors"].append(f"Dropdown {index} could not be fully read: {error}")
+                report["frames"].append(data)
+        except Exception as error:
+            report["errors"].append(f"{type(error).__name__}: {error}")
+        finally:
+            (folder / "fields.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            for file in folder.iterdir():
+                file.chmod(0o600)
+        incomplete = bool(report["errors"])
+        return {"status": "capture_incomplete" if incomplete else "passenger_details",
+                "message": f"Passport/nationality page detected. {'Capture incomplete' if incomplete else 'Capture saved'} at {folder}.\n"
+                           + ("\n".join(report["errors"]) + "\n" if incomplete else "")
+                           + "Screenshot, saved page and field inventory are for local review. Custom dropdown lists may be incomplete; see fields.json. "
+                           "No passenger information was entered or submitted. A seat is not confirmed; continue manually in Scoot's browser."}
+
+    def observe_result(self, timeout: float | None = None, stop: threading.Event | None = None,
+                       page_provider: Callable[[], Page] | None = None) -> dict:
         deadline = time.monotonic() + (RESULT_WATCH if timeout is None else timeout)
         while True:
+            if page_provider is not None:
+                self.page = page_provider()
             try:
                 text = self.page.locator("body").inner_text(timeout=2000)
             except Exception:
@@ -308,6 +525,8 @@ class BookingForm:
             if DEPARTURE_MISMATCH.search(text):
                 return {"status": "departure_mismatch",
                         "message": "Scoot found the Booking Reference (PNR) but the Departing station does not match it. Check the departure station for this booking. No further actions or retries will be made."}
+            if self.passenger_form_visible():
+                return self.capture_passenger_form()
             if time.monotonic() >= deadline or (stop is not None and stop.is_set()):
                 return {"status": "submitted",
                         "message": "Retrieve Booking was clicked once. No recognized queue or failure result was detected during the brief read-only check. Review the Scoot browser yourself; no further actions or retries will be made, and no seat/check-in success is inferred."}
@@ -328,6 +547,40 @@ class Controller:
         self.browser_open = False
         self.caffeinate = None
         self.browser_info = {"name": "", "executable": None, "note": ""}
+        self.click_timing = None
+        self.observed_request = None
+
+    def click_observed(self, source, stamp: float):
+        with self.lock:
+            if self.click_timing is None:
+                return
+            self.click_timing.update(clicked=True, event_at=stamp / 1000)
+            self.state = {"status": "observing",
+                          "message": "Retrieve Booking's click event was observed. Waiting for Scoot's request and result; no second click will be made.",
+                          "target": None}
+
+    def request_observed(self, request):
+        if request.resource_type not in {"xhr", "fetch"}:
+            return
+        with self.lock:
+            if self.click_timing is None or self.observed_request is not None:
+                return
+            observed = time.time()
+            if observed < self.click_timing["target"]:
+                return
+            self.observed_request = request
+            self.click_timing["first_request_at"] = observed
+
+    def response_observed(self, response):
+        if response.request != self.observed_request:
+            return
+        with self.lock:
+            if self.click_timing is not None:
+                self.click_timing["first_response_at"] = time.time()
+                self.click_timing["first_response_status"] = response.status
+                started = response.request.timing["startTime"]
+                if started > 0:
+                    self.click_timing["first_request_started_at"] = started / 1000
 
     def update(self, status: str, message: str, target: float | None = None):
         with self.lock:
@@ -338,6 +591,7 @@ class Controller:
             target = self.state["target"]
             return {**self.state, "now": time.time(), "browser_open": self.browser_open,
                     "browser_name": self.browser_info["name"], "browser_note": self.browser_info["note"],
+                    "click_timing": self.click_timing,
                     "prepare_at": target - PREPARE_LEAD if target else None}
 
     def submit(self, action: str, data: dict):
@@ -381,9 +635,15 @@ class Controller:
 
     def open_browser(self):
         self.close_browser()
-        self.browser = self.playwright.chromium.launch(headless=HEADLESS, executable_path=self.browser_info["executable"])
+        self.browser = self.playwright.chromium.launch(
+            headless=HEADLESS, executable_path=self.browser_info["executable"],
+            args=["--disable-background-timer-throttling", "--disable-renderer-backgrounding",
+                  "--disable-backgrounding-occluded-windows"])
         context = self.browser.new_context(viewport={"width": 1280, "height": 900})
         self.page = context.new_page()
+        self.page.expose_binding("reportChopeClick", self.click_observed)
+        self.page.on("request", self.request_observed)
+        self.page.on("response", self.response_observed)
         self.result_pages = []
         self.page.on("popup", lambda popup: self.result_pages.append(popup))
         with self.lock:
@@ -425,6 +685,11 @@ class Controller:
             if now >= target:
                 self.click(job)
                 return None
+            if target - now <= FINAL_CHECK_LEAD and "click_fields" not in job:
+                self.page.bring_to_front()
+                job["click_fields"] = BookingForm(self.page).arm_click(job["booking"])
+                BookingForm(self.page).show_click_target(job["booking"], target)
+                return job
             if now >= job["next_check"] and target - now > RETRY_CUTOFF:
                 try:
                     BookingForm(self.page).verify(job["booking"])
@@ -452,6 +717,7 @@ class Controller:
             self.update("preparing", f"Preparation attempt {job['attempts']} failed: {job['last_error']}\nRetrying at {retry_at} (airport time). Nothing has been clicked.", target)
             return job
         job["ready"] = True
+        BookingForm(self.page).show_click_target(job["booking"], target)
         job["next_check"] = time.time() + RETRY_INTERVAL
         self.update("ready", "Entries filled and verified. Standing by to click Retrieve Booking once at the scheduled time.", target)
         return job
@@ -461,25 +727,30 @@ class Controller:
         with self.lock:
             if self.state["status"] != "ready":
                 return
-            self.state = {"status": "submitting", "message": "Verifying form and clicking once…", "target": due}
-        if time.time() - due > 2:
-            raise ValueError("The scheduled time was missed by more than two seconds. No late click was made.")
-        button = BookingForm(self.page).verify(job["booking"])
-        if time.time() - due > 2:
-            raise ValueError("Verification took too long. No late click was made.")
+            self.state = {"status": "submitting", "message": "Checking the 50 ms dispatch deadline…", "target": due}
+        if time.time() > due + MAX_CLICK_LATENESS_MS / 1000:
+            raise ValueError("The 50 ms dispatch deadline was missed. No click was made.")
+        if "click_fields" not in job:
+            raise ValueError("Final verification was not completed before the deadline. No click was made.")
+        with self.lock:
+            self.click_timing = {"target": due}
+            self.observed_request = None
         try:
-            button.click(timeout=CLICK_TIMEOUT_MS, no_wait_after=True)
-        except PlaywrightTimeout as error:
-            # Chrome acknowledges the click only after the page's handler runs; a busy page can exceed the
-            # timeout after the press was already delivered, so treat it as sent and never click again.
-            if "performing click action" not in str(error):
-                raise
-        self.update("observing", "Retrieve Booking was clicked once. Reading the result only; no further clicks will be made.")
+            result = BookingForm(self.page).dispatch_click(job["click_fields"], job["booking"], due)
+        except Exception as error:
+            self.update("uncertain", f"Click dispatch could not be confirmed ({type(error).__name__}: {error}). "
+                        "A click may have been sent. Review the Scoot browser; no retry will be made.")
+            return
+        with self.lock:
+            self.click_timing.update(result)
+        if not result["clicked"]:
+            raise ValueError(f"{result['reason']} No click was made.")
+        self.update("observing", "Retrieve Booking was clicked once. Watching the result and capturing the passenger form if shown. No second retrieval click will be made.")
         try:
             self.page.wait_for_timeout(100)
             page = self.visible_page()
             page.bring_to_front()
-            outcome = BookingForm(page).observe_result(stop=self.stop)
+            outcome = BookingForm(page).observe_result(stop=self.stop, page_provider=self.visible_page)
         except Exception as error:
             outcome = {"status": "submitted",
                        "message": f"Retrieve Booking was clicked once, but the result could not be read ({type(error).__name__}). "
@@ -492,7 +763,8 @@ class Controller:
         opens = datetime.fromtimestamp(job["target"] - PREPARE_LEAD, zone).strftime("%H:%M:%S")
         note = f" {self.browser_info['note']}" if self.browser_info["note"] else ""
         return (f"Scheduled for {at} ({zone.key}). {self.browser_info['name']} launches at {opens} to load Scoot and fill the entries, "
-                f"then clicks Retrieve Booking once on time.{note} Keep this app running and the laptop awake, plugged in and open.")
+                f"then attempts one Retrieve Booking click within 50 ms of the scheduled time, otherwise aborts.{note} "
+                "This is a local dispatch limit, not a guarantee of Scoot's receipt time. Keep the laptop awake, plugged in and open.")
 
     def run(self):
         try:
@@ -512,7 +784,7 @@ class Controller:
         while not self.stop.is_set():
             wait = 0.2
             if job is not None:
-                wait = min(wait, max(0.005, (job["target"] - time.time()) / 2))
+                wait = min(wait, max(0.001, (job["target"] - time.time()) / 2))
             try:
                 action, payload = self.commands.get(timeout=wait)
             except queue.Empty:
@@ -520,6 +792,9 @@ class Controller:
             try:
                 if action == "schedule":
                     self.close_browser()
+                    with self.lock:
+                        self.click_timing = None
+                        self.observed_request = None
                     self.browser_info = default_browser()
                     job = {**payload, "ready": False, "attempts": 0, "last_error": "",
                            "next_attempt": payload["target"] - PREPARE_LEAD}
@@ -668,29 +943,18 @@ def run_window(server: ThreadingHTTPServer):
 
 
 def main():
-    args = sys.argv[1:]
-    window_mode = "--window" in args
-    open_page = "--open" in args
     try:
         server = ThreadingHTTPServer((HOST, PORT), Handler)
     except OSError:
-        if window_mode:
-            if focus_running_window():
-                sys.exit(0)
-        elif open_page:
-            webbrowser.open(ORIGIN)
+        if focus_running_window():
+            sys.exit(0)
         print(f"auto-chope-seat could not start: port {PORT} is in use (is it already running?).", flush=True)
         sys.exit(1)
     signal.signal(signal.SIGTERM, stop_on_terminate)
     controller.worker.start()
-    print(f"auto-chope-seat: {ORIGIN}" + (" (window)" if window_mode else " — Ctrl+C to stop."), flush=True)
+    print(f"auto-chope-seat: {ORIGIN} (native window)", flush=True)
     try:
-        if window_mode:
-            run_window(server)
-        else:
-            if open_page:
-                webbrowser.open(ORIGIN)
-            server.serve_forever()
+        run_window(server)
     except KeyboardInterrupt:
         pass
     finally:

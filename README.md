@@ -12,15 +12,51 @@ cd ~/Documents/auto-chope-seat
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 .venv/bin/python -m playwright install chromium
-.venv/bin/python app.py --window
+.venv/bin/python app.py
 ```
 
-`--window` opens the app in its own native macOS window (pywebview/WebKit);
-closing the window quits the app. Without it, open http://127.0.0.1:8766 in a
-browser (or use `--open`) and stop with Ctrl+C or the **Quit app** button.
-The app uses `icon.png` as its browser-tab icon and as the bundled macOS app icon.
+The app opens in its own native macOS window (pywebview/WebKit); closing the
+window quits the app. The local browser-based app mode is not supported.
+The app uses `icon.png` as its bundled macOS app icon.
 
 ### Double-clickable laptop app
+
+The window groups the form into **Booking** and **Schedule**, with a separate
+**Status** card for the countdown and result. Use **Confirm schedule** to start,
+**Cancel schedule** to cancel pending work, and **Show Scoot browser** to review
+the controlled browser. Detailed safety and privacy guidance is under
+**Safety, privacy & how it works**. Closing the window or quitting cancels
+pending work.
+
+The Status card includes a live five-step guide and a **Next** action message.
+Steps follow backend reports rather than a simulated animation. After the form
+is verified, the controlled Scoot browser also shows a blue target ring and the
+scheduled click time. The marker does not intercept clicks or move the system
+pointer. It changes to “Click event observed” when the event occurs; this does
+not confirm that Scoot received the request or allocated a seat. A busy browser
+can delay painting the marker, even when the app has reported the event.
+
+### Passenger-page capture (local app)
+
+After retrieval, the app watches for a form with identifiable passport and
+nationality/citizenship fields, including a result popup. On detection it saves
+a full-page screenshot (`page.png`), HTML (`page.html`), a Chromium MHTML snapshot
+(`page.mhtml`, including loaded resources), and `fields.json` in a timestamped
+folder under `~/Library/Application Support/auto-chope-seat/captures/`.
+The Status card shows the folder path and any capture errors.
+
+Native select options and field metadata are inventoried. Custom comboboxes are
+opened to read loaded options, then dismissed with Escape; no options are
+selected, passenger fields filled, or forms submitted. Virtualized lists,
+dependent lists and options not loaded into the DOM may be incomplete.
+`fields.json` records that limitation and errors rather than claiming a complete
+list. The snapshot is reference material, not a restorable authenticated booking.
+
+These captures **may contain personal booking data**. They are stored outside the
+repository in private directories (0700) with private files (0600), not uploaded.
+Delete the timestamped folder when no longer needed. Passenger-page detection
+does not establish that a seat or boarding is confirmed. Continue manually in
+Scoot's browser; no additional retrieval click is performed.
 
 ```sh
 ./scripts/build_mac_app.sh            # creates ~/Applications/auto-chope-seat.app
@@ -105,7 +141,28 @@ The schedule is airport-local time with daylight saving accounted for.
 Ambiguous/nonexistent DST times and past times are rejected. A calendar day is
 always required. There are no automatic submission retries or refresh storms.
 Cancel is effective before submission begins; a dispatched click cannot be undone.
-Missed clicks over two seconds late are rejected, including after system sleep.
+The local app uses a strict **50 ms dispatch guard**. It prepares element
+references before the deadline, then rechecks the PNR, departure, button and
+browser clock in one browser task immediately before invoking the button.
+Early attempts and attempts over 50 ms late are rejected without a click.
+The status card distinguishes the pre-click clock check from the captured click
+event, the first subsequent fetch/XHR, its response, and the click handler's
+return. The click event is reported while the handler is still running, rather
+than waiting for it to finish. The first subsequent fetch/XHR may be unrelated
+to booking retrieval; none of these measurements proves Scoot's receipt time.
+No request URLs, headers, or payloads are included in this timeline.
+A second
+dispatch on the same form is refused, and an uncertain dispatch is never retried.
+
+This uses the button's DOM `click()` rather than a simulated mouse click, avoiding
+Playwright's scrolling, stability and acknowledgement waits at the deadline.
+macOS and Chrome are not real-time systems: even between a clock check and the
+click, execution can be paused. Keep the system clock synchronised. **Neither
+zero-delay execution nor Scoot's receipt time can be guaranteed.** This policy
+applies to the laptop app; cloud scheduling retains its separate 2-second limit.
+Chrome is brought forward during final verification, and background timer,
+renderer, and occluded-window throttling are disabled for the controlled browser.
+These measures reduce avoidable background delays, not network or site delays.
 Timing depends on the OS/browser/network; exact delivery to Scoot is not guaranteed.
 
 ## Hosted Cloudflare application
@@ -272,13 +329,16 @@ It does not automatically select seats, pay, or complete check-in.
 ## Local app privacy
 
 The local app has no screenshot preview; review the entries in the visible
-Chrome window itself. No screenshots of booking data are taken.
+Chrome window itself. The passenger-page capture described above is the exception:
+it saves local screenshots and page data when passport/nationality fields appear.
 
 After retrieval the controlled browser's result tab is brought to the front.
 If Scoot opens a popup, that tab is used; otherwise its existing tab is kept.
 The app does not copy result URLs into another browser or duplicate submissions,
 because that can lose the booking session. Use **Show Scoot browser**
-for manual continuation. It does not interact with passenger/passport forms.
+for manual continuation. The app only inventories passenger/passport forms and
+opens dropdowns to read their loaded options; it never enters passenger details,
+selects an option, or submits these forms.
 
 PNR stays in memory and is filled into the official Scoot website only when
 Prepare is requested. No booking data is written to files or browser storage

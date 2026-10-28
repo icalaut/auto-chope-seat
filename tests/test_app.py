@@ -3,6 +3,7 @@ from pathlib import Path
 import time
 import json
 import threading
+import tempfile
 import unittest
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -163,6 +164,65 @@ class BrowserTests(unittest.TestCase):
     def tearDown(self):
         self.page.close()
 
+    def test_passenger_page_capture_saves_files_and_dropdowns_without_submission(self):
+        self.page.set_content("""
+            <form onsubmit="event.preventDefault();window.submitted=true">
+              <label>Passport number<input name="passportNumber"></label>
+              <label>Nationality<select name="nationality"><option value="">Choose</option>
+                <option value="SG">Singapore</option><option value="MY">Malaysia</option></select></label>
+              <label>Issuing country<input role="combobox" aria-label="Issuing country"
+                onclick="document.querySelector('[role=listbox]').hidden=false"
+                onkeydown="if(event.key==='Escape')document.querySelector('[role=listbox]').hidden=true"></label>
+              <div role="listbox" hidden><div role="option">Singapore</div><div role="option">Malaysia</div></div>
+              <button>Continue</button>
+            </form>""")
+        with tempfile.TemporaryDirectory() as root, patch.object(app, "CAPTURE_ROOT", Path(root)):
+            result = self.form.observe_result(timeout=0)
+            self.assertEqual(result["status"], "passenger_details", result["message"])
+            folder, = Path(root).iterdir()
+            self.assertEqual({file.name for file in folder.iterdir()}, {"page.png", "page.html", "page.mhtml", "fields.json"})
+            self.assertTrue((folder / "page.png").read_bytes().startswith(b"\x89PNG"))
+            self.assertIn("Passport number", (folder / "page.html").read_text())
+            self.assertIn("MIME-Version", (folder / "page.mhtml").read_text())
+            data = json.loads((folder / "fields.json").read_text())
+            fields = data["frames"][0]["fields"]
+            nationality = next(field for field in fields if field["name"] == "nationality")
+            self.assertEqual([option["value"] for option in nationality["options"]], ["", "SG", "MY"])
+            self.assertEqual(len(data["frames"][0]["expanded_dropdowns"][0]["options"]), 2)
+            self.assertEqual(folder.stat().st_mode & 0o777, 0o700)
+            self.assertTrue(all(file.stat().st_mode & 0o777 == 0o600 for file in folder.iterdir()))
+        self.assertEqual(self.page.locator("[name=passportNumber]").input_value(), "")
+        self.assertFalse(self.page.evaluate("Boolean(window.submitted)"))
+
+    def test_capture_failure_is_reported_not_success(self):
+        self.page.set_content('<label>Passport<input></label><label>Nationality<select><option>Choose</option></select></label>')
+        with tempfile.TemporaryDirectory() as root, patch.object(app, "CAPTURE_ROOT", Path(root)):
+            with patch.object(self.page, "screenshot", side_effect=RuntimeError("Screenshot unavailable")):
+                result = self.form.observe_result(timeout=0)
+            self.assertEqual(result["status"], "capture_incomplete")
+            self.assertIn("Screenshot unavailable", result["message"])
+            folder, = Path(root).iterdir()
+            self.assertTrue(json.loads((folder / "fields.json").read_text())["errors"])
+            self.assertTrue((folder / "page.html").is_file())
+            self.assertTrue((folder / "page.mhtml").is_file())
+            self.assertTrue(json.loads((folder / "fields.json").read_text())["frames"])
+
+    def test_passport_help_text_does_not_trigger_capture(self):
+        self.page.set_content("<p>Have your passport and nationality ready.</p>" + FORM)
+        with patch.object(self.form, "capture_passenger_form") as capture:
+            self.assertEqual(self.form.observe_result(timeout=0)["status"], "submitted")
+            capture.assert_not_called()
+
+    def test_result_observer_follows_new_popup(self):
+        popup = self.browser.new_page()
+        try:
+            popup.set_content('<label>Passport<input></label><label>Nationality<select><option>Choose</option></select></label>')
+            with tempfile.TemporaryDirectory() as root, patch.object(app, "CAPTURE_ROOT", Path(root)):
+                outcome = self.form.observe_result(timeout=0, page_provider=lambda: popup)
+                self.assertEqual(outcome["status"], "passenger_details", outcome["message"])
+        finally:
+            popup.close()
+
     def test_fill_verify_click_once(self):
         self.form.prepare(self.booking)
         self.assertEqual(self.page.evaluate("window.clicks||0"), 0)
@@ -174,6 +234,58 @@ class BrowserTests(unittest.TestCase):
         self.page.locator("#pnr").fill("DEF456")
         with self.assertRaises(ValueError):
             self.form.verify(self.booking)
+
+    def test_strict_dispatch_boundaries_and_no_duplicate(self):
+        fixed_now = 1800000000000
+        for lateness, allowed in [(-1, False), (0, True), (49, True), (50, True), (51, False), (1500, False)]:
+            with self.subTest(lateness=lateness):
+                self.page.set_content(FORM)
+                self.page.evaluate("window.clicks = 0")
+                self.form.prepare(self.booking)
+                fields = self.form.arm_click(self.booking)
+                self.page.evaluate("(now) => { Date.now = () => now; }", fixed_now)
+                result = self.form.dispatch_click(fields, self.booking, (fixed_now - lateness) / 1000)
+                self.assertEqual(result["clicked"], allowed)
+                self.assertEqual(result["lateness_ms"], lateness)
+                self.assertEqual(self.page.evaluate("window.clicks||0"), int(allowed))
+                if allowed:
+                    again = self.form.dispatch_click(fields, self.booking, (fixed_now - lateness) / 1000)
+                    self.assertFalse(again["clicked"])
+                    self.assertEqual(self.page.evaluate("window.clicks"), 1)
+
+    def test_strict_dispatch_rechecks_form_and_button(self):
+        for change in [
+            "document.querySelector('#pnr').value = 'WRONG1'",
+            "document.querySelector('select').value = 'Taipei'",
+            "document.querySelector('button').disabled = true",
+            "document.querySelector('button').remove()",
+            "document.body.insertAdjacentHTML('beforeend', '<button>Retrieve Booking</button>')",
+            "document.body.insertAdjacentHTML('beforeend', '<div style=\"position:fixed;inset:0;z-index:99;background:white\"></div>')",
+        ]:
+            with self.subTest(change=change):
+                self.page.set_content(FORM)
+                self.page.evaluate("window.clicks = 0")
+                self.form.prepare(self.booking)
+                fields = self.form.arm_click(self.booking)
+                self.page.evaluate(change)
+                result = self.form.dispatch_click(fields, self.booking, time.time())
+                self.assertFalse(result["clicked"])
+                self.assertNotIn("lateness_ms", result)
+                self.assertEqual(self.page.evaluate("window.clicks||0"), 0)
+
+    def test_strict_dispatch_with_live_dropdown_markup(self):
+        self.page.set_content(LIVE_FORM)
+        self.form.prepare(self.booking)
+        self.form.show_click_target(self.booking, 1800000000)
+        self.assertIn("NEXT: Retrieve Booking", self.page.locator("#auto-chope-seat-target #label").inner_text())
+        self.assertEqual(self.page.evaluate("window.clicks||0"), 0)
+        fields = self.form.arm_click(self.booking)
+        self.page.evaluate("Date.now = () => 1800000000000")
+        result = self.form.dispatch_click(fields, self.booking, 1800000000)
+        self.assertTrue(result["clicked"])
+        self.assertEqual(result["lateness_ms"], 0)
+        self.assertEqual(self.page.evaluate("window.clicks"), 1)
+        self.assertIn("Click event observed", self.page.locator("#auto-chope-seat-target #label").inner_text())
 
     def test_changed_station_blocked(self):
         self.form.prepare(self.booking)
@@ -346,6 +458,90 @@ class BrowserTests(unittest.TestCase):
         self.assertTrue(self.page.locator("#schedule").is_disabled())
         self.assertEqual([path for path in requests if path.startswith("/api/")], ["/api/config"])
 
+    def test_local_window_layout_and_scheduling_controls(self):
+        state = {"status": "idle", "message": "Enter the booking and schedule the retrieval time.",
+                 "target": None, "now": time.time(), "browser_open": False}
+        actions = []
+
+        def serve(route):
+            from urllib.parse import urlparse
+            path = urlparse(route.request.url).path
+            if path == "/api/config":
+                route.fulfill(json={"token": "fixture-token", "mode": "local"})
+            elif path == "/api/status":
+                route.fulfill(json=state)
+            elif path == "/api/action":
+                action = route.request.post_data_json
+                actions.append(action)
+                if action["action"] == "schedule":
+                    state.update(status="scheduled", message="Scheduled for retrieval.",
+                                 target=state["now"] + 600, prepare_at=state["now"] + 300,
+                                 browser_name="Google Chrome")
+                elif action["action"] == "cancel":
+                    state.update(status="idle", message="Schedule cancelled.", target=None)
+                route.fulfill(json={"accepted": True})
+            else:
+                filename = "index.html" if path == "/" else path.lstrip("/")
+                types = {".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json"}
+                if filename in {"index.html", "app.js", "style.css", "stations.json", "timezones.json"}:
+                    file = app.ROOT / filename
+                    route.fulfill(body=file.read_bytes(), content_type=types[file.suffix])
+                else:
+                    route.fulfill(status=404)
+
+        self.page.route("https://local.fixture/**", serve)
+        self.page.goto("https://local.fixture/")
+        self.page.wait_for_function("document.querySelector('#status').textContent === 'Ready to schedule'")
+        self.assertEqual(self.page.locator('#live-progress [aria-current="step"]').count(), 0)
+        self.assertTrue(self.page.locator("#preview-section").is_hidden())
+        self.assertFalse(self.page.locator("details").get_attribute("open"))
+        for width in [1100, 640, 390]:
+            self.page.set_viewport_size({"width": width, "height": 900})
+            self.assertTrue(self.page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
+        self.page.locator("[name=pnr]").fill("abc123")
+        self.assertEqual(self.page.locator("[name=pnr]").input_value(), "ABC123")
+        self.page.locator("[name=departure]").fill("Singapore")
+        self.assertEqual(self.page.locator("[name=timezone]").input_value(), "Asia/Singapore")
+        self.page.locator("[name=date]").fill("2099-10-28")
+        self.page.locator("[name=time]").fill("22:00:00")
+        self.page.get_by_role("button", name="Confirm schedule", exact=True).click()
+        self.page.wait_for_function("document.querySelector('#status').textContent === 'Scheduled'")
+        self.assertEqual(self.page.locator('#live-progress [aria-current="step"]').get_attribute("data-step"), "scheduled")
+        self.assertIn("launch the browser", self.page.locator("#next-action").inner_text())
+        self.assertEqual(actions[-1]["action"], "schedule")
+        self.assertEqual(actions[-1]["time"], "22:00:00")
+        self.assertTrue(self.page.locator("[name=pnr]").is_disabled())
+        self.assertTrue(self.page.locator("#schedule").is_disabled())
+        self.assertIn("Google Chrome launches at", self.page.locator("#countdown").inner_text())
+        self.page.get_by_role("button", name="Cancel schedule", exact=True).click()
+        self.page.wait_for_function("document.querySelector('#status').textContent === 'Ready to schedule'")
+        self.assertEqual(actions[-1]["action"], "cancel")
+        self.assertEqual(self.page.locator('#live-progress [aria-current="step"]').count(), 0)
+        self.assertTrue(self.page.locator("[name=pnr]").is_enabled())
+        self.page.locator("summary").click()
+        self.assertTrue(self.page.locator("#privacy-note").is_visible())
+        state.update(status="departure_mismatch", message="Check the departure station.")
+        self.page.wait_for_function("document.querySelector('#status').textContent === 'Check departing airport'")
+        self.assertEqual(self.page.locator(".status-card").get_attribute("data-tone"), "warning")
+        state.update(status="submitted", click_timing={
+            "clicked": True, "target": 1800000000, "event_at": 1800000000.007,
+            "lateness_ms": 7, "first_request_at": 1800000000.012,
+            "first_response_at": 1800000020, "first_response_status": 200,
+            "handler_returned_at": 1800000000.010
+        })
+        self.page.wait_for_function("document.querySelector('#click-timing').textContent.includes('+7 ms')")
+        self.assertIn("50 ms limit", self.page.locator("#click-timing").inner_text())
+        self.assertIn("Click event observed:", self.page.locator("#click-timing").inner_text())
+        self.assertIn("First subsequent fetch/XHR observed:", self.page.locator("#click-timing").inner_text())
+        self.assertIn("HTTP 200", self.page.locator("#click-timing").inner_text())
+        self.assertIn("not proof of request delivery", self.page.locator("#click-timing").inner_text())
+        self.assertEqual(self.page.locator('#live-progress [aria-current="step"]').get_attribute("data-step"), "result")
+        state.update(status="observing")
+        self.page.wait_for_function("document.querySelector('#next-action').textContent.includes('Click event observed')")
+        state.update(status="error")
+        self.page.wait_for_function("document.querySelector('#next-action').textContent.startsWith('Stopped:')")
+        self.assertEqual(self.page.locator('#live-progress [aria-current="step"]').count(), 0)
+
     def test_cloud_frontend_preview_and_manual_controls(self):
         image = self.page.screenshot(type="jpeg")
         actions = []
@@ -380,6 +576,7 @@ class BrowserTests(unittest.TestCase):
         self.page.wait_for_function("!document.querySelector('#browser-preview').hidden && !document.querySelector('#remote-controls').disabled")
         self.assertTrue(self.page.locator("#show-browser").is_hidden())
         self.assertTrue(self.page.locator("#remote-controls").is_visible())
+        self.page.locator("summary").click()
         self.assertIn("encrypted", self.page.locator("#privacy-note").inner_text())
         self.page.locator("[name=departure]").fill("Kochi (KCZ) — Japan")
         self.assertEqual(self.page.locator("[name=timezone]").input_value(), "Asia/Tokyo")
@@ -541,20 +738,64 @@ class SchedulerTests(unittest.TestCase):
 
     def test_slow_click_acknowledgement_is_treated_as_clicked_once(self):
         self.busy_click = True
-        with patch.object(app, "CLICK_TIMEOUT_MS", 1000):
-            due = self.schedule()
-            self.wait_status("submitted", timeout=25)
+        due = self.schedule()
+        self.wait_status("submitted", timeout=25)
         time.sleep(0.3)
         self.assertEqual(len(self.clicks), 1)
         self.assertGreaterEqual(self.clicks[0], due)
 
     def test_busy_result_page_is_reread_until_readable(self):
         self.busy_result = True
-        with patch.object(app, "CLICK_TIMEOUT_MS", 1000):
-            self.schedule()
-            state = self.wait_status("airport_queue", timeout=30)
+        self.schedule()
+        observed = self.wait_status("observing", timeout=15)
+        self.assertIsNotNone(observed["click_timing"]["event_at"])
+        self.assertNotIn("handler_returned_at", observed["click_timing"])
+        state = self.wait_status("airport_queue", timeout=30)
         self.assertIn("TRY-1", state["message"])
         self.assertEqual(len(self.clicks), 1)
+        timing = state["click_timing"]
+        self.assertGreater(timing["handler_returned_at"] - timing["event_at"], 3.5)
+        self.assertGreaterEqual(timing["first_request_at"], timing["target"])
+        self.assertEqual(timing["first_response_status"], 200)
+
+    def test_browser_side_deadline_blocks_delayed_dispatch(self):
+        dispatch = BookingForm.dispatch_click
+
+        def delayed(form, fields, booking, target):
+            time.sleep(0.08)
+            return dispatch(form, fields, booking, target)
+
+        with patch.object(BookingForm, "dispatch_click", delayed):
+            self.schedule()
+            state = self.wait_status("error")
+        self.assertIn("50 ms dispatch deadline was missed", state["message"])
+        self.assertFalse(self.controller.snapshot()["click_timing"]["clicked"])
+        self.assertGreater(self.controller.snapshot()["click_timing"]["lateness_ms"], 50)
+        time.sleep(0.2)
+        self.assertEqual(self.clicks, [])
+
+    def test_python_side_deadline_blocks_late_worker(self):
+        click = self.controller.click
+
+        def delayed(job):
+            time.sleep(0.08)
+            return click(job)
+
+        with patch.object(self.controller, "click", delayed):
+            self.schedule()
+            state = self.wait_status("error")
+        self.assertIn("50 ms dispatch deadline was missed", state["message"])
+        time.sleep(0.2)
+        self.assertEqual(self.clicks, [])
+
+    def test_uncertain_dispatch_is_never_retried(self):
+        with patch.object(BookingForm, "dispatch_click", side_effect=RuntimeError("Browser disconnected")) as dispatch:
+            self.schedule()
+            state = self.wait_status("uncertain")
+            time.sleep(0.2)
+            self.assertEqual(dispatch.call_count, 1)
+        self.assertIn("A click may have been sent", state["message"])
+        self.assertEqual(self.clicks, [])
 
     def test_slow_page_load_event_does_not_block_preparation(self):
         self.hang_assets = True
@@ -598,7 +839,10 @@ class SchedulerTests(unittest.TestCase):
         time.sleep(0.3)
         self.assertEqual(len(self.clicks), 1)
         self.assertGreaterEqual(self.clicks[0], due)
-        self.assertLess(self.clicks[0] - due, 2)
+        timing = self.controller.snapshot()["click_timing"]
+        self.assertTrue(timing["clicked"])
+        self.assertGreaterEqual(timing["lateness_ms"], 0)
+        self.assertLessEqual(timing["lateness_ms"], 50)
         self.assertTrue(self.controller.snapshot()["browser_open"])
 
     def test_preparation_retries_until_form_available(self):
@@ -634,6 +878,23 @@ class SchedulerTests(unittest.TestCase):
         self.wait_status("idle")
         self.assertFalse(self.controller.snapshot()["browser_open"])
         time.sleep(max(0, due - time.time()) + 0.3)
+        self.assertEqual(self.clicks, [])
+
+    def test_cancel_after_final_verification_prevents_dispatch(self):
+        armed = threading.Event()
+        arm = BookingForm.arm_click
+
+        def capture(form, booking):
+            fields = arm(form, booking)
+            armed.set()
+            return fields
+
+        with patch.object(BookingForm, "arm_click", capture):
+            due = self.schedule()
+            self.assertTrue(armed.wait(timeout=10))
+            self.controller.submit("cancel", {})
+            self.wait_status("idle")
+        time.sleep(max(0, due - time.time()) + 0.1)
         self.assertEqual(self.clicks, [])
 
     def test_show_browser_does_not_submit(self):

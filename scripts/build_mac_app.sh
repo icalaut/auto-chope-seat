@@ -52,8 +52,11 @@ URL="http://127.0.0.1:8766"
 LOG="$HOME/Library/Logs/auto-chope-seat.log"
 
 if curl -fsS -m 2 "$URL/api/status" >/dev/null 2>&1; then
-  curl -fsS -m 2 -X POST "$URL/api/focus" >/dev/null 2>&1 || open "$URL"
-  exit 0
+  if curl -fsS -m 2 -X POST "$URL/api/focus" >/dev/null 2>&1; then
+    exit 0
+  fi
+  osascript -e "display alert \"auto-chope-seat\" message \"The running app could not be brought to the front. Quit it and reopen the app.\" as critical"
+  exit 1
 fi
 
 if [ ! -x "$PROJECT/.venv/bin/python" ]; then
@@ -63,7 +66,7 @@ fi
 
 cd "$PROJECT" || exit 1
 echo "--- $(date) starting auto-chope-seat" >>"$LOG"
-nohup "$PROJECT/.venv/bin/python" app.py --window >>"$LOG" 2>&1 &
+nohup "$PROJECT/.venv/bin/python" app.py >>"$LOG" 2>&1 &
 
 for _ in $(seq 1 40); do
   sleep 0.5
