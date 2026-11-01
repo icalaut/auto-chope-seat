@@ -1454,7 +1454,7 @@ class DesktopApp:
             label.pack(fill="x")
             self.steps.append(label)
         ttk.Label(status_panel, text="Activity log (departure airport time)", style="Section.TLabel").pack(anchor="w", pady=(12, 0))
-        self.history_table = self.make_table(status_panel, [("Time", 200), ("Action", 650)], height=4)
+        self.history_log = self.make_log(status_panel, height=7)
         self.history_rows = []
         ttk.Label(status_panel, text="Release timing (computer time)", style="Section.TLabel").pack(anchor="w", pady=(8, 0))
         self.timing_table = self.make_table(status_panel, [
@@ -1584,6 +1584,33 @@ class DesktopApp:
 
         ttk.Button(window, text="Refresh", command=update).pack(anchor="e", padx=10, pady=5)
         update()
+
+    @staticmethod
+    def make_log(parent, height):
+        """Read-only word-wrapping log so long entries stay fully readable in the window."""
+        frame = ttk.Frame(parent, style="Card.TFrame")
+        frame.pack(fill="both", expand=True, pady=8)
+        text = tk.Text(frame, height=height, wrap="word", font=("Helvetica Neue", 12),
+                       background="#ffffff", foreground=INK, relief="flat", borderwidth=0,
+                       highlightthickness=1, highlightbackground=BORDER, highlightcolor=BORDER,
+                       padx=8, pady=6, cursor="arrow", takefocus=0)
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=text.yview)
+        text.configure(yscrollcommand=scrollbar.set, state="disabled")
+        text.tag_configure("time", font=("Menlo", 11), foreground=MUTED, spacing1=4)
+        text.tag_configure("action", lmargin1=0, lmargin2=16, spacing3=4)
+        scrollbar.pack(side="right", fill="y")
+        text.pack(side="left", fill="both", expand=True)
+        return text
+
+    @staticmethod
+    def fill_log(log, entries):
+        log.configure(state="normal")
+        log.delete("1.0", "end")
+        for stamp, action in entries:
+            log.insert("end", f"{stamp}\n", "time")
+            log.insert("end", f"{action}\n", "action")
+        log.configure(state="disabled")
+        log.see("end")
 
     @staticmethod
     def make_table(parent, columns, height):
@@ -1725,8 +1752,7 @@ class DesktopApp:
         history = [(datetime.fromtimestamp(event["at"], zone).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3], event["action"])
                    for event in state.get("history", [])]
         if history != self.history_rows:
-            self.fill_table(self.history_table, history)
-            self.history_table.yview_moveto(1)
+            self.fill_log(self.history_log, history)
             self.history_rows = history
         rows = timing_table_rows(state.get("click_timing"))
         if rows != self.timing_rows:
