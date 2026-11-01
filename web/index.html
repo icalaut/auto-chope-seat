@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1d2330">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon.png">
+<title>auto-chope-seat</title>
+<style>
+:root {
+  --ink: #161a22; --panel: #1d2330; --card: #ffffff; --bg: #f2f4f7;
+  --border: #dfe3ea; --muted: #5f6774; --accent: #ffd200; --accent-dark: #e8bf00;
+  --accent-soft: #fff3bd; --good: #1d7a34; --bad: #b00020;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.45 -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+main { max-width: 640px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 26px; margin: 8px 0 2px; }
+.subtitle { color: var(--muted); font-size: 14px; margin: 0 0 14px; }
+.hero {
+  background: var(--panel); border-radius: 14px; padding: 18px; color: #aab3c2; margin-bottom: 16px;
+}
+.hero .eyebrow { color: var(--accent); font-weight: 700; font-size: 12px; letter-spacing: .08em; }
+.hero .timer { font: 700 44px/1.15 "SF Mono", Menlo, monospace; color: #fff; }
+.hero .timer.active { color: var(--accent); }
+.hero .timer.good { color: #6fdc8c; }
+.hero .timer.bad { color: #ff9b9b; }
+.hero .caption { font-size: 14px; }
+.hero pre {
+  font: 11px/1.5 "SF Mono", Menlo, monospace; color: #8d97a8;
+  white-space: pre-wrap; margin: 10px 0 0; display: none;
+}
+.hero pre.show { display: block; }
+.card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+  padding: 16px; margin-bottom: 16px;
+}
+.card h2 { font-size: 13px; color: var(--muted); letter-spacing: .04em; margin: 0 0 12px; text-transform: uppercase; }
+label { display: block; font-size: 14px; margin: 10px 0 4px; }
+input, select {
+  width: 100%; font-size: 16px; padding: 10px; border: 1px solid var(--border);
+  border-radius: 8px; background: #fff; color: var(--ink); appearance: none;
+}
+input:disabled, select:disabled { background: #f0f1f4; color: #9aa1ac; }
+.note { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+button {
+  width: 100%; padding: 13px; font-size: 16px; font-weight: 700; border-radius: 10px;
+  border: 1px solid var(--border); background: #fff; color: var(--ink); margin-top: 12px;
+}
+button.primary { background: var(--accent); border-color: var(--accent-dark); }
+button:disabled { background: #f5f6f8; color: #9aa1ac; border-color: var(--border); }
+.banner { display: none; background: #fdecee; border: 1px solid #f5c2c7; color: var(--bad);
+  border-radius: 10px; padding: 10px 12px; font-size: 14px; margin-bottom: 14px; }
+.banner.show { display: block; }
+.statusline { font-size: 19px; font-weight: 700; margin: 0 0 4px; }
+.message { color: var(--muted); font-size: 14px; margin: 0 0 10px; }
+ol.steps { list-style: none; margin: 0; padding: 0; }
+ol.steps li { padding: 9px 10px; border-radius: 8px; color: var(--muted); font-size: 14px; }
+ol.steps li.current { background: var(--accent-soft); color: var(--ink); font-weight: 700; }
+ol.steps li.done { color: var(--good); }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); background: #f3f4f6; }
+.overlay {
+  position: fixed; inset: 0; background: var(--panel); display: none;
+  align-items: center; justify-content: center; padding: 24px; z-index: 10;
+}
+.overlay.show { display: flex; }
+.overlay .card { width: 100%; max-width: 380px; }
+</style>
+</head>
+<body>
+<div class="overlay" id="token-overlay">
+  <div class="card">
+    <h2>Access token</h2>
+    <p class="note">Enter the ACS_TOKEN configured on the server.</p>
+    <input id="token-input" type="password" autocomplete="current-password" placeholder="Server token">
+    <button class="primary" id="token-save">Unlock</button>
+  </div>
+</div>
+<main>
+  <h1>auto-chope-seat</h1>
+  <p class="subtitle">Releases Scoot's booking retrieval at the exact departure-airport time you set.</p>
+
+  <section class="hero">
+    <div class="eyebrow">RELEASE COUNTDOWN</div>
+    <div class="timer" id="timer">--:--:--</div>
+    <div class="caption" id="caption">Connecting…</div>
+    <pre id="stage"></pre>
+  </section>
+
+  <div class="banner" id="error"></div>
+
+  <section class="card">
+    <h2>1 · Booking</h2>
+    <label for="pnr">Booking reference (PNR)</label>
+    <input id="pnr" maxlength="6" autocapitalize="characters" autocomplete="off" placeholder="AB1CDE">
+    <label for="station">Departing airport</label>
+    <select id="station"><option value="">Loading airports…</option></select>
+    <p class="note" id="tz-note">Choose an airport to set its timezone automatically.</p>
+  </section>
+
+  <section class="card">
+    <h2>2 · Schedule</h2>
+    <p class="note">Use the departure airport's local time (not the flight time).</p>
+    <label for="date">Release date</label>
+    <input id="date" type="date">
+    <label for="time">Release time (HH:mm:ss.SSS)</label>
+    <input id="time" inputmode="numeric" placeholder="08:00:00.000">
+    <button class="primary" id="schedule">Confirm schedule</button>
+    <button id="cancel" disabled>Cancel schedule</button>
+  </section>
+
+  <section class="card">
+    <h2>3 · Progress</h2>
+    <p class="statusline" id="status">—</p>
+    <p class="message" id="message"></p>
+    <ol class="steps" id="steps"></ol>
+  </section>
+
+  <section class="card">
+    <h2>Activity log (departure airport time)</h2>
+    <table><tbody id="history"></tbody></table>
+  </section>
+
+  <section class="card">
+    <h2>Release timing (server time)</h2>
+    <table>
+      <thead><tr><th>Event</th><th>Time</th><th>Offset</th><th>Meaning</th></tr></thead>
+      <tbody id="timing"></tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>ⓘ Before you start</h2>
+    <p class="note">Keep the server running; stopping it cancels the schedule. One release only, no
+    retries. The recorded release is the server's local call time, not Scoot's receipt time, and a
+    passenger page does not confirm a seat. Passenger pages are saved on the server and may contain
+    personal data.</p>
+  </section>
+</main>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  let token = localStorage.getItem("acs_token") || "";
+  let stations = [];
+  let latest = null;
+  let clockOffset = 0; // server epoch - local epoch, seconds
+  let edited = { date: false, time: false };
+
+  function showToken(show) { $("token-overlay").classList.toggle("show", show); }
+  $("token-save").onclick = () => {
+    token = $("token-input").value.trim();
+    localStorage.setItem("acs_token", token);
+    showToken(false);
+    loadStations();
+    poll();
+  };
+
+  async function api(path, options = {}) {
+    const response = await fetch(path, {
+      ...options,
+      headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json", ...(options.headers || {}) },
+    });
+    if (response.status === 401) { showToken(true); throw new Error("unauthorised"); }
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || "Request failed");
+    return body;
+  }
+
+  function setError(text) {
+    $("error").textContent = text || "";
+    $("error").classList.toggle("show", Boolean(text));
+  }
+
+  function airportNow(zone) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+    }).formatToParts(new Date()).reduce((acc, part) => (acc[part.type] = part.value, acc), {});
+    return {
+      date: `${parts.year}-${parts.month}-${parts.day}`,
+      time: `${parts.hour === "24" ? "00" : parts.hour}:${parts.minute}:${parts.second}.000`,
+    };
+  }
+
+  function selectedStation() { return stations.find(s => s.code === $("station").value); }
+
+  function prefill() {
+    const station = selectedStation();
+    if (!station || !station.timezone) return;
+    const now = airportNow(station.timezone);
+    if (!edited.date || $("date").value < now.date) $("date").value = now.date;
+    if (!edited.time) $("time").value = now.time;
+  }
+
+  async function loadStations() {
+    try {
+      const data = await api("/api/stations");
+      stations = data.stations;
+      $("station").innerHTML = '<option value="">Select airport…</option>' +
+        stations.map(s => `<option value="${s.code}">${s.label}</option>`).join("");
+    } catch (error) { /* token overlay already shown on 401 */ }
+  }
+
+  $("station").onchange = () => {
+    const station = selectedStation();
+    $("tz-note").textContent = station && station.timezone
+      ? `Automatically selected ${station.timezone}.`
+      : "Choose an airport to set its timezone automatically.";
+    prefill();
+  };
+  $("date").oninput = () => { edited.date = true; };
+  $("time").oninput = () => { edited.time = true; };
+  $("pnr").oninput = () => { $("pnr").value = $("pnr").value.toUpperCase(); };
+
+  $("schedule").onclick = async () => {
+    setError("");
+    const station = selectedStation();
+    try {
+      if (!station) throw new Error("Select the departing airport.");
+      await api("/api/schedule", { method: "POST", body: JSON.stringify({
+        pnr: $("pnr").value, departure: station.name, timezone: station.timezone,
+        date: $("date").value, time: $("time").value,
+      })});
+    } catch (error) { if (error.message !== "unauthorised") setError(error.message); }
+  };
+  $("cancel").onclick = async () => {
+    setError("");
+    try { await api("/api/cancel", { method: "POST", body: "{}" }); }
+    catch (error) { if (error.message !== "unauthorised") setError(error.message); }
+  };
+
+  function render(state) {
+    latest = state;
+    clockOffset = state.server_now - Date.now() / 1000;
+    $("caption").textContent = state.caption;
+    $("stage").textContent = state.stage_text;
+    $("stage").classList.toggle("show", state.target != null);
+    $("status").textContent = state.status_label;
+    $("message").textContent = state.message;
+    $("steps").innerHTML = state.steps.map((step, index) => {
+      const cls = index === state.step_index ? "current" : index < state.step_index ? "done" : "";
+      const marker = index < state.step_index ? "✓" : index === state.step_index ? "→" : index + 1;
+      return `<li class="${cls}">${marker}&nbsp;&nbsp;${step}</li>`;
+    }).join("");
+    $("history").innerHTML = state.history.slice(-8).reverse()
+      .map(event => `<tr><td>${event.time}</td><td>${event.action}</td></tr>`).join("")
+      || '<tr><td colspan="2" class="note">No activity yet.</td></tr>';
+    $("timing").innerHTML = state.timing_rows
+      .map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join("")}</tr>`).join("")
+      || '<tr><td colspan="4" class="note">No release timing yet.</td></tr>';
+    const locked = state.active;
+    ["pnr", "station", "date", "time"].forEach(id => { $(id).disabled = locked; });
+    $("schedule").disabled = locked;
+    $("cancel").disabled = !state.can_cancel;
+    tick();
+  }
+
+  function tick() {
+    if (!latest) return;
+    const timer = $("timer");
+    timer.className = "timer";
+    if (latest.target == null) { timer.textContent = "--:--:--"; return; }
+    const remaining = latest.target - (Date.now() / 1000 + clockOffset);
+    if (latest.active && remaining > 0) {
+      const total = Math.floor(remaining);
+      const days = Math.floor(total / 86400);
+      const hh = String(Math.floor(total % 86400 / 3600)).padStart(2, "0");
+      const mm = String(Math.floor(total % 3600 / 60)).padStart(2, "0");
+      const ss = String(total % 60).padStart(2, "0");
+      timer.textContent = days ? `${days}d ${hh}:${mm}:${ss}` : `${hh}:${mm}:${ss}`;
+      timer.classList.add("active");
+    } else {
+      timer.textContent = latest.headline;
+      if (latest.active) timer.classList.add("active");
+      else if (["submitted", "passenger_details"].includes(latest.status)) timer.classList.add("good");
+      else if (["error", "unsuccessful", "uncertain", "capture_incomplete"].includes(latest.status)) timer.classList.add("bad");
+    }
+  }
+
+  async function poll() {
+    try {
+      render(await api("/api/state"));
+      setTimeout(poll, 1000);
+    } catch (error) {
+      if (error.message !== "unauthorised") {
+        $("caption").textContent = "Reconnecting…";
+        setTimeout(poll, 3000);
+      }
+    }
+  }
+
+  setInterval(tick, 200);
+  if (!token) showToken(true);
+  else { loadStations(); poll(); }
+})();
+</script>
+</body>
+</html>

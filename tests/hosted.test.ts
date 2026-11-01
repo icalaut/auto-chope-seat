@@ -37,7 +37,10 @@ test("airport-local schedule with strict format, time window and DST rejection",
   assert.throws(() => scheduleTime(data, target), /five seconds/);
   assert.equal(scheduleTime(data, target - 86400000), target);
   assert.throws(() => scheduleTime(data, target - 86400001), /24 hours/);
-  for (const fields of [{ date: "2027-02-30" }, { time: "24:00:00" }, { time: "2:00:00" }]) {
+  assert.equal(scheduleTime({ ...data, time: "22:03:04.125" }, target - 6000), target + 125);
+  assert.equal(scheduleTime({ ...data, time: "22:03:04.000" }, target - 6000), target);
+  for (const fields of [{ date: "2027-02-30" }, { time: "24:00:00" }, { time: "2:00:00" },
+                        { time: "22:03:04.1" }, { time: "22:03:04.12" }, { time: "22:03:04.1234" }]) {
     assert.throws(() => scheduleTime({ ...data, ...fields }, target - 6000));
   }
   for (const [date, time] of [["2027-03-14", "02:30:00"], ["2027-11-07", "01:30:00"]]) {
@@ -70,10 +73,6 @@ test("only scheduled on-time jobs may dispatch, never replay a recorded attempt"
 test("queues and unsuccessful results stop; help text and unknown pages never imply success", () => {
   assert.equal(resultStatus("Unsuccessful staff web check-in\nQueue: TRY-1").status, "airport_queue");
   assert.equal(resultStatus("Web check-in is unsuccessful").status, "unsuccessful");
-  assert.equal(resultStatus("Online check-in is already closed for this flight.").status, "checkin_closed");
-  assert.equal(resultStatus("Online check-in is not open yet! You can start checking in for your flight TR 866 at 10-13-2026 22:00 (SGT)").status, "not_open_yet");
-  assert.equal(resultStatus("Online check-in is currently not available for your booking. Please go to the counter.").status, "pnr_not_found");
-  assert.equal(resultStatus("Please ensure your Booking Reference (PNR) and Departing station are entered correctly.").status, "departure_mismatch");
   assert.match(resultStatus("If unsuccessful staff web check-in, attend the airport.").message, /No check-in or seat success is inferred/);
   assert.match(resultStatus("Unknown result").message, /No check-in or seat success is inferred/);
   assert.match(resultStatus("[Successful] Staff web check-in").message, /65 minutes/);

@@ -37,8 +37,8 @@ export function validateBooking(data: Record<string, unknown>): Booking {
 
 export function scheduleTime(data: Record<string, unknown>, now = Date.now()): number {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(data.date)) ||
-      !/^\d{2}:\d{2}:\d{2}$/.test(String(data.time))) {
-    throw new Error("Supply a date and HH:mm:ss.");
+      !/^\d{2}:\d{2}:\d{2}(?:\.\d{3})?$/.test(String(data.time))) {
+    throw new Error("Supply a date and HH:mm:ss or HH:mm:ss.SSS (three millisecond digits).");
   }
   let target: number;
   try {
@@ -58,20 +58,6 @@ export function resultStatus(text: string): { status: string; message: string } 
   if (queues.length) return { status: "airport_queue", message: `Queue: ${queues.join(", ")}. Attend the airport staff-travel counter in person. Automation has stopped; no retries or confirmed seat.` };
   if (/^\s*(?:unsuccessful\s+(?:staff\s+)?web\s+check[- ]?in|(?:staff\s+)?web\s+check[- ]?in\s+(?:is\s+|was\s+)?unsuccessful)\b/im.test(text)) {
     return { status: "unsuccessful", message: "Unsuccessful web check-in. Automation has stopped. Follow Scoot's airport counter instructions." };
-  }
-  if (/online\s+check[- ]?in\s+is\s+already\s+closed\s+for\s+this\s+flight/i.test(text)) {
-    return { status: "checkin_closed", message: "Scoot says online check-in is already closed for this flight (PNR and departure matched, but the flight is in the past). Automation has stopped; no retries." };
-  }
-  if (/online\s+check[- ]?in\s+is\s+not\s+open\s+yet/i.test(text)) {
-    const opens = text.match(/for\s+your\s+flight\s+([A-Z0-9]{2}\s*\d{1,4})\s+at\s+(\d{1,2}-\d{1,2}-\d{4}\s+\d{1,2}:\d{2})(?:\s*\(([A-Z]{2,5})\))?/i);
-    const when = opens ? `Check-in for flight ${opens[1].toUpperCase()} opens at ${opens[2]}${opens[3] ? ` (${opens[3].toUpperCase()})` : ""}` : "Scoot did not state the opening time";
-    return { status: "not_open_yet", message: `Online check-in is not open yet. ${when}. Schedule a new retrieval for the opening time. Automation has stopped; no retries.` };
-  }
-  if (/online\s+check[- ]?in\s+is\s+currently\s+not\s+available\s+for\s+your\s+booking/i.test(text)) {
-    return { status: "pnr_not_found", message: "Scoot says online check-in is not available for this booking (Booking Reference/PNR not found). Please go to the airport counter. Automation has stopped; no retries." };
-  }
-  if (/ensure\s+your\s+booking\s+reference\s*\(PNR\)\s+and\s+departing\s+station\s+are\s+entered\s+correctly/i.test(text)) {
-    return { status: "departure_mismatch", message: "Scoot found the Booking Reference (PNR) but the Departing station does not match it. Check the departure station. Automation has stopped; no retries." };
   }
   if (/\[Successful\]\s*Staff web check-in/i.test(text)) {
     return { status: "submitted", message: "Scoot displays successful staff web check-in. Follow its kiosk/service-desk instructions at least 65 minutes before departure; final acceptance remains subject to availability. Automation has stopped." };

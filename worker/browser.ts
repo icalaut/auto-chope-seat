@@ -31,7 +31,7 @@ export async function checkForm(page: Page, booking?: Booking) {
     const namedDeparture = selects.filter(el => /Departing/i.test(label(el)));
     const departure = namedDeparture.length === 1 ? namedDeparture[0] : selects.length === 1 ? selects[0] : null;
     const buttons = [...document.querySelectorAll<HTMLButtonElement>('button, [role=button], input[type=submit]')].filter(el => visible(el) &&
-      /^Retrieve Booking\b/i.test(el.textContent?.trim() || el.value || el.getAttribute("aria-label") || ""));
+      /^Retrieve Booking\s*$/i.test(el.textContent?.trim() || el.value || el.getAttribute("aria-label") || ""));
     if (!pnr || !departure || buttons.length !== 1) throw new Error("Booking form cannot be uniquely identified; no retrieval.");
     if (input) {
       const selected = departure instanceof HTMLSelectElement ? departure.selectedOptions[0]?.textContent?.trim()

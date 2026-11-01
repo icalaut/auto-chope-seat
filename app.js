@@ -12,7 +12,6 @@ let token;
 let state;
 let busy = false;
 let mode = "local";
-let stopped = false;
 let previewBusy = false;
 let previewRefresh;
 const stationLabels = new Map();
@@ -23,37 +22,19 @@ const dateInput = form.elements.namedItem("date");
 const timeInput = form.elements.namedItem("time");
 let dateWasEdited = false;
 let timeWasEdited = false;
-function enforceMinimumDate(today) {
-  dateInput.min = today;
-  if (dateInput.value && dateInput.value < today) dateInput.value = today;
-}
 function prefillToday(timezone = undefined) {
+  if (dateWasEdited && timeWasEdited) return;
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23"
   }).formatToParts(new Date());
   const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-  const today = `${values.year}-${values.month}-${values.day}`;
-  enforceMinimumDate(today);
-  if (!dateWasEdited) dateInput.value = today;
-  if (!timeWasEdited) timeInput.value = `${values.hour}:${values.minute}:${values.second}`;
+  if (!dateWasEdited) dateInput.value = `${values.year}-${values.month}-${values.day}`;
+  if (!timeWasEdited) timeInput.value = `${values.hour}:${values.minute}:${values.second}.000`;
 }
 prefillToday();
 dateInput.addEventListener("input", () => { dateWasEdited = true; });
-// Keeps the minimum current when the page stays open past midnight; earlier dates snap to today.
-function refreshMinimumDate() {
-  try {
-    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezoneInput.value || undefined, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
-    const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-    enforceMinimumDate(`${values.year}-${values.month}-${values.day}`);
-  } catch (problem) {
-    if (!(problem instanceof RangeError)) throw problem;
-  }
-}
-dateInput.addEventListener("change", refreshMinimumDate);
-dateInput.addEventListener("focus", refreshMinimumDate);
-setInterval(refreshMinimumDate, 60000);
 timeInput.addEventListener("input", () => { timeWasEdited = true; });
 timezoneInput.addEventListener("input", () => {
   try {
@@ -77,122 +58,20 @@ departureInput.addEventListener("input", () => {
   selectDepartureTimezone(station);
 });
 
-const ACTIVE = ["working", "scheduled", "preparing", "ready", "submitting", "observing"];
-const STATUS_LABELS = {
-  idle: "Ready to schedule", scheduled: "Scheduled", preparing: "Preparing browser",
-  ready: "Ready and standing by", submitting: "Retrieving booking", observing: "Reading the result",
-  submitted: "Review your result", airport_queue: "Airport counter required",
-  unsuccessful: "Check-in unsuccessful", not_open_yet: "Check-in opens later",
-  checkin_closed: "Check-in closed", pnr_not_found: "Booking not found",
-  departure_mismatch: "Check departing airport", error: "Needs attention",
-  prepared: "Browser prepared", edited: "Prepare again", working: "Preparing browser",
-  uncertain: "Review your result", stopped: "App stopped", cancelled: "Schedule cancelled",
-  passenger_details: "Passenger page captured", capture_incomplete: "Page capture needs review"
-};
-function renderStatus(remote) {
-  renderProgress(remote);
-  document.querySelector("#status").textContent = STATUS_LABELS[remote.status] || remote.status;
-  document.querySelector(".status-card").dataset.tone = remote.status === "error" ? "error"
-    : ACTIVE.includes(remote.status) ? "active"
-    : ["airport_queue", "unsuccessful", "not_open_yet", "checkin_closed", "pnr_not_found", "departure_mismatch", "uncertain", "capture_incomplete"].includes(remote.status) ? "warning" : "neutral";
-  document.querySelector("#message").textContent = remote.status === "edited"
-    ? "Inputs changed. Prepare the browser again before scheduling." : remote.message;
-  document.querySelector("#countdown").textContent = countdown(remote);
-  const timing = remote.click_timing;
-  const timeline = [];
-  const clock = stamp => new Date(stamp * 1000).toLocaleString([], {
-    hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit", fractionalSecondDigits: 3
-  });
-  if (timing?.target) timeline.push(`Scheduled: ${clock(timing.target)} (this computer's time)`);
-  if (timing?.event_at) timeline.push(`Click event observed: ${clock(timing.event_at)} (+${Math.round((timing.event_at - timing.target) * 1000)} ms)`);
-  if (timing?.lateness_ms !== undefined) timeline.push(`Pre-click clock check: +${timing.lateness_ms} ms (50 ms limit; not proof of request delivery)`);
-  if (timing?.clicked || timing?.event_at) {
-    timeline.push(timing.first_request_at
-      ? `First subsequent fetch/XHR observed: ${clock(timing.first_request_at)} (+${Math.round((timing.first_request_at - timing.target) * 1000)} ms). May not be the booking request.`
-      : "No subsequent fetch/XHR observed yet.");
-    if (timing.first_request_started_at) timeline.push(`Browser-reported request start: ${clock(timing.first_request_started_at)}`);
-    if (timing.first_response_at) timeline.push(`Its response observed: ${clock(timing.first_response_at)} (HTTP ${timing.first_response_status})`);
-    if (timing.handler_returned_at && timing.event_at) timeline.push(`Click handler returned after ${Math.round((timing.handler_returned_at - timing.event_at) * 1000)} ms.`);
-    timeline.push("Scoot's receipt time and seat availability are not confirmed.");
-  }
-  document.querySelector("#click-timing").textContent = timeline.join("\n");
-}
-function renderProgress(remote) {
-  const steps = ["scheduled", "preparing", "ready", "click", "result"];
-  const step = {
-    scheduled: "scheduled", preparing: "preparing", working: "preparing",
-    prepared: "ready", ready: "ready", submitting: "click", observing: "result",
-    submitted: "result", airport_queue: "result", unsuccessful: "result",
-    not_open_yet: "result", checkin_closed: "result", pnr_not_found: "result",
-    departure_mismatch: "result", passenger_details: "result", capture_incomplete: "result"
-  }[remote.status];
-  const index = steps.indexOf(step);
-  for (const item of document.querySelectorAll("#live-progress li")) {
-    const current = item.dataset.step === step;
-    if (current) item.setAttribute("aria-current", "step");
-    else item.removeAttribute("aria-current");
-    item.classList.toggle("complete", index >= 0 && steps.indexOf(item.dataset.step) < index);
-  }
-  const next = {
-    scheduled: "Next: launch the browser 5 minutes before retrieval.",
-    preparing: "Now: opening Scoot and filling your booking. Next: verify the form and stand by.",
-    working: "Now: processing your action. Wait for confirmation.",
-    ready: "Next: recheck the booking and dispatch once at the scheduled time, or abort if the deadline is missed.",
-    prepared: "Next: confirm a retrieval time.",
-    submitting: "Now: checking the deadline and attempting one click. Do not click manually.",
-    observing: remote.click_timing?.event_at
-      ? "Click event observed. Next: wait for Scoot's response. No further click will be made."
-      : "Now: reading the result. Next: review Scoot's browser.",
-    error: "Stopped: review the error. No automatic retry will be made.",
-    uncertain: "Dispatch is uncertain. Review Scoot's browser; do not assume nothing was sent.",
-    edited: "Next: prepare the browser again after changing your booking.",
-    idle: "Next: enter your booking and confirm a schedule.",
-    cancelled: "Schedule cancelled. Next: confirm a new schedule if needed.",
-    stopped: "App stopped. No further action is scheduled.",
-    passenger_details: "Next: continue manually in Scoot's browser. The captured page does not confirm a seat.",
-    capture_incomplete: "Next: review the capture errors and continue manually in Scoot's browser."
-  }[remote.status] || "Next: review the result in Scoot's browser. Automation has stopped.";
-  document.querySelector("#next-action").textContent = next;
-}
 function updateButtons() {
   const status = state?.status;
-  if (mode === "cloud") {
-    buttons.prepare.disabled = !token || busy || ["working", "scheduled", "submitting", "observing"].includes(status);
-    buttons.schedule.disabled = !token || busy || status !== "prepared";
-    buttons.cancel.disabled = !token || busy || !["prepared", "scheduled"].includes(status);
-  } else {
-    buttons.schedule.disabled = !token || busy || ACTIVE.includes(status);
-    buttons.cancel.disabled = !token || busy || !["scheduled", "preparing", "ready"].includes(status);
-  }
-  document.querySelector("#quit").disabled = !token || busy || ["submitting", "observing"].includes(status);
-  document.querySelector("#show-browser").disabled = !token || busy || (mode === "local" && !state?.browser_open) ||
-    ["working", "preparing", "submitting", "observing"].includes(status);
+  buttons.prepare.disabled = !token || busy || ["working", "scheduled", "submitting", "observing"].includes(status);
+  buttons.schedule.disabled = !token || busy || status !== "prepared";
+  buttons.cancel.disabled = !token || busy || !["prepared", "scheduled"].includes(status);
+  document.querySelector("#show-browser").disabled = !token || busy || ["working", "submitting", "observing"].includes(status);
   document.querySelector("#remote-controls").disabled = !token || busy || previewBusy || !state?.manual_available;
   document.querySelector("#close-cloud").disabled = !token || busy || !state?.preview_available ||
     ["working", "scheduled", "submitting"].includes(status);
   document.querySelector("#browser-preview").classList.toggle("interactive",
     mode === "cloud" && state?.manual_available && !busy && !previewBusy && document.querySelector("#enable-clicks").checked);
   for (const input of form.querySelectorAll("input")) {
-    input.disabled = busy || ACTIVE.includes(status);
+    input.disabled = busy || ["working", "scheduled", "submitting", "observing"].includes(status);
   }
-}
-
-function duration(seconds) {
-  const total = Math.max(0, Math.floor(seconds));
-  const hours = Math.floor(total / 3600);
-  const clock = `${String(Math.floor(total / 60) % 60).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
-  return hours ? `${hours}:${clock}` : clock;
-}
-function countdown(remote) {
-  if (!remote.target || !["scheduled", "preparing", "ready"].includes(remote.status)) return "";
-  const left = remote.target - remote.now;
-  const click = left < 60 ? `${Math.max(0, left).toFixed(1)} s` : duration(left);
-  const browser = remote.browser_name || "Browser";
-  if (remote.status === "scheduled" && remote.prepare_at && remote.prepare_at > remote.now) {
-    const launch = new Date(remote.prepare_at * 1000).toLocaleTimeString([], { hour12: false });
-    return `${browser} launches at ${launch} (this computer's time), in ${duration(remote.prepare_at - remote.now)} · Retrieve Booking click in ${click}`;
-  }
-  return remote.status === "ready" ? `Standing by in ${browser} · Retrieve Booking click in ${click}` : `Retrieve Booking click in ${click}`;
 }
 
 async function request(url, options) {
@@ -226,17 +105,7 @@ async function send(action, extra = {}) {
       headers: { "Content-Type": "application/json", "X-App-Token": token },
       body: JSON.stringify({ action, ...(action === "manual" || action === "close" ? {} : fields), ...extra })
     });
-    if (action === "quit") {
-      stopped = true;
-      token = null;
-      document.querySelector("#status").textContent = STATUS_LABELS.stopped;
-      renderProgress({status: "stopped"});
-      document.querySelector("#message").textContent = "auto-chope-seat has quit. No retrieval is pending. You can close this tab; open the app again to schedule.";
-      document.querySelector("#countdown").textContent = "";
-      return;
-    }
     state = await request("/api/status");
-    renderStatus(state);
   } catch (problem) {
     error.textContent = problem.message;
   } finally {
@@ -251,11 +120,6 @@ async function send(action, extra = {}) {
 
 buttons.prepare.addEventListener("click", () => send("prepare"));
 buttons.cancel.addEventListener("click", () => send("cancel"));
-document.querySelector("#quit").addEventListener("click", async () => {
-  const pending = ["scheduled", "preparing", "ready"].includes(state?.status);
-  if (!confirm(pending ? "Quit and cancel the scheduled retrieval?" : "Quit auto-chope-seat?")) return;
-  await send("quit");
-});
 document.querySelector("#show-browser").addEventListener("click", () => send("show_browser"));
 document.querySelector("#close-cloud").addEventListener("click", () => send("close"));
 document.querySelector("#enable-clicks").addEventListener("change", updateButtons);
@@ -283,7 +147,6 @@ form.addEventListener("input", () => {
     buttons.schedule.disabled = true;
     document.querySelector("#message").textContent = "Inputs changed. Prepare the browser again before scheduling.";
     state = { ...state, status: "edited" };
-    renderProgress(state);
   }
 });
 
@@ -325,53 +188,45 @@ async function start() {
     mode = config.mode === "cloud" ? "cloud" : "local";
     token = config.token;
     if (mode === "cloud") {
-      buttons.prepare.hidden = false;
-      buttons.schedule.textContent = "2. Schedule retrieval";
-      document.querySelector("#quit").hidden = true;
       document.querySelector("#show-browser").hidden = true;
       document.querySelector("#remote-controls").hidden = false;
       document.querySelector("#close-cloud").hidden = false;
       document.querySelector("#preview-help").textContent = "Cloud browser preview updates every five seconds while visible. It pauses 15 seconds before retrieval. Use the controls below to continue manually after retrieval; the session cannot be opened as a normal local tab.";
       document.querySelector("#runtime-note").textContent = "Use only one device per booking. Cloud scheduling can continue while this page is closed. Schedule 5 seconds to 24 hours ahead. A distant schedule reopens the browser 30 seconds before retrieval. Exact timing is not guaranteed; clicks more than two seconds late are stopped.";
-      document.querySelector("#schedule-help").textContent = "Schedule 5 seconds to 24 hours ahead, in the departure airport's local time. Prepare the cloud browser first.";
-      document.querySelector("#timing-policy").textContent = "Cloud timing is best effort; attempts more than 2 seconds late are stopped. The local 50 ms dispatch guard does not apply to cloud mode.";
       document.querySelector("#privacy-note").textContent = "PNR is encrypted in Cloudflare Durable Object storage until cancellation, expiry, or the recorded retrieval attempt. Browser sessions expire after ten minutes. Preview and manual text may contain personal data; they are not saved by this app. Cloud browser usage is metered. Close the cloud session when finished.";
     }
     const poll = async () => {
-      if (stopped) return;
       try {
         const remote = await request("/api/status");
-        if (stopped) return;
         if (state?.status === "edited" && remote.status === "prepared") remote.status = "edited";
         state = remote;
-        renderStatus(remote);
+        document.querySelector("#status").textContent = remote.status;
+        document.querySelector("#message").textContent = remote.status === "edited"
+          ? "Inputs changed. Prepare the browser again before scheduling." : remote.message;
+        document.querySelector("#countdown").textContent = remote.target && remote.status === "scheduled"
+          ? `${Math.max(0, remote.target - remote.now).toFixed(1)} seconds remaining` : "";
         document.querySelector("#session-expiry").textContent = mode === "cloud" && remote.preview_available
           ? `Cloud session closes at ${new Date(remote.session_expires * 1000).toLocaleTimeString()}.` : "";
         updateButtons();
       } catch (problem) {
-        if (stopped) return;
         token = null;
-        error.textContent = `Connection lost: ${problem.message}. Pending work may still be running ${mode === "cloud" ? "in Cloudflare" : "in the auto-chope-seat app"}. Reopen this page to reconnect.`;
+        error.textContent = `Connection lost: ${problem.message}. Pending work may still be running ${mode === "cloud" ? "in Cloudflare" : "in the terminal"}. Reopen this page to reconnect.`;
         updateButtons();
         return;
       }
       setTimeout(poll, mode === "cloud" ? 1000 : 250);
     };
     await poll();
-    if (mode === "cloud") {
-      document.querySelector("#preview-section").hidden = false;
-      refreshPreview();
-    }
+    refreshPreview();
   } catch (problem) {
     const hosted = !local || mode === "cloud";
     document.querySelector("#status").textContent = hosted ? "Hosted automation unavailable" : "Automation unavailable";
     document.querySelector("#message").textContent = !hosted
-      ? `Local automation service unavailable: ${problem.message}. Airport and timezone lists are independent; open the auto-chope-seat app to schedule retrieval.`
+      ? `Local automation service unavailable: ${problem.message}. Airport and timezone lists are independent; start the Python app to schedule retrieval.`
       : `Airport and timezone lists work independently. ${problem.message}`;
-    if (hosted) {
-      document.querySelector("#preview-section").hidden = false;
-      document.querySelector("#preview-message").textContent = "Cloud preview requires the deployed Worker backend, Browser Rendering and Cloudflare Access setup.";
-    }
+    document.querySelector("#preview-message").textContent = !hosted
+      ? "Start the local Python app for browser preview."
+      : "Cloud preview requires the deployed Worker backend, Browser Rendering and Cloudflare Access setup.";
     updateButtons();
   }
 }
@@ -389,7 +244,7 @@ async function refreshPreview() {
     } else if (mode === "cloud" && document.hidden) {
       message.textContent = "Preview paused while this page is hidden.";
     } else if (busy || ["working", "submitting", "observing"].includes(state?.status) ||
-        (["scheduled", "ready"].includes(state?.status) && state.target - state.now <= (mode === "cloud" ? 15 : 3))) {
+        (state?.status === "scheduled" && state.target - state.now <= (mode === "cloud" ? 15 : 3))) {
       message.textContent = "Preview paused to prioritize the booking action.";
     } else {
       const response = await fetch("/api/preview", { headers: { "X-App-Token": token } });
@@ -409,7 +264,7 @@ async function refreshPreview() {
     }
   } catch (problem) {
     message.textContent = problem.message;
-    document.querySelector("#browser-preview").hidden = true;
+    if (mode === "cloud") document.querySelector("#browser-preview").hidden = true;
   } finally {
     previewBusy = false;
     updateButtons();

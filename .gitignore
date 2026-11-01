@@ -1,11 +1,7 @@
 .venv/
 __pycache__/
 *.pyc
-node_modules/
+build/
 dist/
+node_modules/
 .wrangler/
-.dev.vars
-.dev.vars.*
-.env
-.env.*
-captures/

@@ -1,0 +1,10 @@
+{
+  "name": "auto-chope-seat",
+  "short_name": "chope-seat",
+  "description": "Releases Scoot's booking retrieval at the exact departure-airport time you set.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1d2330",
+  "theme_color": "#1d2330",
+  "icons": [{ "src": "/icon.png", "sizes": "any", "type": "image/png" }]
+}
