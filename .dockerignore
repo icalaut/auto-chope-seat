@@ -5,3 +5,10 @@ node_modules
 dist
 tests
 *.dmg
+build
+outputs
+.claude
+.wrangler
+*.spec
+*.pyc
+.DS_Store

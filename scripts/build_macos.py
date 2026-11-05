@@ -79,6 +79,11 @@ def main() -> None:
          f"Set :CFBundleShortVersionString {version}", str(info_plist)], env)
     run(["/usr/libexec/PlistBuddy", "-c",
          f"Add :CFBundleVersion string {version}", str(info_plist)], env)
+    # Resources and Info.plist are finalized after PyInstaller's initial signing.
+    # Refresh the personal-use signature so unsigned bundles remain launchable.
+    if not signing_identity:
+        run(["/usr/bin/codesign", "--force", "--deep", "--sign", "-", str(app_bundle)], env)
+        run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app_bundle)], env)
     print(f"Built {app_bundle} for {architecture} ({version})")
 
 

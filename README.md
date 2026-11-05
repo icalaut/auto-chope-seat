@@ -179,3 +179,21 @@ Run the local tests with:
 
 Browser tests require the Playwright Chromium browser. Tests do not deploy
 anything or submit a live airline booking.
+
+## Project files
+
+- `app.py`: native Mac application and shared Python scheduler.
+- `SKILL.md`: default retrieval workflow and application field mapping.
+- `server.py` and `web/`: optional Python self-hosted phone interface.
+- `worker/`, `index.html`, `app.js`, and `style.css`: separate Cloudflare application.
+- `scripts/build_macos.py`: standalone Mac app builder, including bundled Chromium.
+- `scripts/start_phone_server.sh`: start the optional phone server.
+- `tests/`: local fixture and scheduler tests.
+- `dist/`: generated web assets, recreated with `npm run build`.
+
+For a standalone personal Mac build, install `requirements-build.txt` into your
+virtual environment, then run `.venv/bin/python scripts/build_macos.py v1.1.0`.
+The result is under `dist/macos/<architecture>/`. Personal builds receive an
+ad-hoc signature after packaging; Apple signing and notarization remain optional.
+The previous project-dependent launcher builder has been retired in favor of
+this standalone app builder.

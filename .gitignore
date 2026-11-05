@@ -6,3 +6,9 @@ dist/
 node_modules/
 .wrangler/
 .acs_token
+
+# Local outputs and macOS packaging artifacts
+outputs/
+.DS_Store
+*.dmg
+*.spec
