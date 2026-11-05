@@ -35,13 +35,16 @@ PAGE_LOAD_TIMEOUT_MS = 120000
 FOREGROUND_INTERVAL = 1
 RETRY_INTERVAL = 30
 RETRY_CUTOFF = 60
-MAX_CLICK_LATENESS_MS = 5
+MAX_RELEASE_LATENESS_MS = 50
+REQUEST_PREPARE_LEAD = 15
 FINAL_CHECK_LEAD = 2
+RELEASE_POLICY = ("Retrieve Booking clicked once at check-in minus one second. No automatic retries. "
+                  "A missed local dispatch window aborts. Click timing is not proof of server receipt.")
 DISPATCH_LEAD = 0.25
 MAX_REQUEST_TRACE = 100
+BOOKING_REQUEST_SCHEME = "https"
 BOOKING_REQUEST_HOST = "apigw.singaporeair.com"
 BOOKING_REQUEST_PATH = "/chopemyseat/booking/retrieval"
-REQUEST_PREPARE_LEAD = 15
 RESULT_WATCH = 30
 CAPTURE_ROOT = Path.home() / "Library/Application Support/auto-chope-seat/captures"
 PNR_NOT_FOUND = re.compile(r"online\s+check[- ]?in\s+is\s+currently\s+not\s+available\s+for\s+your\s+booking", re.I)
@@ -187,6 +190,19 @@ def scheduled_timestamp(data: dict, now: float | None = None) -> float:
 DEPARTURE_OPTION = '[aria-label^="Dropdown option for"][aria-label*="departing"]'
 
 
+def wait_until(target_ns: int, stop: threading.Event) -> bool:
+    while not stop.is_set():
+        remaining = target_ns - time.time_ns()
+        if remaining <= 0:
+            return True
+        if remaining > 5_000_000:
+            stop.wait(min(1, (remaining - 2_000_000) / 1_000_000_000))
+        else:
+            end = time.monotonic_ns() + remaining
+            while time.monotonic_ns() < end and time.time_ns() < target_ns:
+                if stop.is_set():
+                    return False
+    return False
 
 def not_open_message(text: str) -> str:
     detail = NOT_OPEN_DETAIL.search(text)
@@ -255,6 +271,11 @@ class BookingForm:
         """Selects the station and returns the label ChopeMySeat shows for it."""
         tag = departure.evaluate("(element) => element.tagName")
         if tag == "SELECT":
+            # Wait for the actual requested station, including asynchronously loaded native options.
+            option = departure.locator("option").filter(has_text=re.compile(r"^\s*" + re.escape(name) + r"\s*$"))
+            option.wait_for(state="attached", timeout=5000)
+            if option.count() != 1:
+                raise ValueError("The departure station is ambiguous. Choose a unique airport.")
             departure.select_option(label=name)
             return name
         departure.click()
@@ -283,8 +304,8 @@ class BookingForm:
 
     def prepare(self, booking: dict):
         pnr, departure, _ = self.fields()
-        pnr.fill(booking["pnr"])
         booking["site_departure"] = self.select_departure(departure, booking["departure"], booking.get("code"))
+        pnr.fill(booking["pnr"])
         self.verify(booking)
 
     def verify(self, booking: dict):
@@ -305,7 +326,7 @@ class BookingForm:
 
     def show_click_target(self, booking: dict, target: float):
         button = self.verify(booking)
-        button.evaluate("""(button, target) => {
+        button.evaluate("""(button, targetLabel) => {
             let host = document.getElementById("auto-chope-seat-target");
             if (!host) {
                 host = document.createElement("div");
@@ -336,18 +357,17 @@ class BookingForm:
                 addEventListener("resize", () => host.updatePosition(), {passive:true});
             }
             root.getElementById("label").textContent = "NEXT: Retrieve Booking once at " +
-                new Date(target * 1000).toLocaleString([], {hour12:false}) +
-                " (computer time). Check app status for aborts.";
+                targetLabel + ". Check-in minus one second.";
             const state = Symbol.for("auto-chope-seat.target-marker");
             if (!button[state]) {
                 button[state] = true;
                 button.addEventListener("click", () => {
                     root.getElementById("label").textContent =
-                        "Click event observed. Waiting for Scoot; do not click again. No seat is confirmed.";
+                        "Retrieve Booking clicked. Continue manually; do not click again.";
                     root.getElementById("ring").style.borderColor = "#23834b";
                 }, {once:true});
             }
-        }""", target)
+        }""", display_time(target, booking["timezone"]))
 
     def arm_click(self, booking: dict) -> dict:
         button = self.verify(booking)
@@ -357,16 +377,9 @@ class BookingForm:
                 "button": button.element_handle()}
 
     def dispatch_click(self, fields: dict, booking: dict, target: float) -> dict:
-        # Enter the browser before the deadline, rather than send a protocol command at it.
-        return self.page.evaluate("""async ({pnr, departure, button, booking, target, tolerance,
-                                             wait_until_target = false, allow_late_retry = false}) => {
+        # Keep verification and the single click atomic in the page; timing is handled locally.
+        return self.page.evaluate("""({pnr, departure, button, booking, target}) => {
             const refuse = reason => ({clicked: false, reason});
-            if (wait_until_target) {
-                if (target - Date.now() > 1000)
-                    return refuse("Browser dispatch was requested too early.");
-                while (Date.now() < target)
-                    await new Promise(resolve => setTimeout(resolve, Math.max(0, target - Date.now() - 2)));
-            }
             if (![pnr, departure, button].every(element => element && element.isConnected))
                 return refuse("The prepared form was replaced or removed.");
             if (pnr.value.trim().toUpperCase() !== booking.pnr)
@@ -394,28 +407,23 @@ class BookingForm:
             const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
             if (!hit || !button.contains(hit))
                 return refuse("Retrieve Booking is covered or outside the viewport.");
+            if (booking.timed_dispatch && (Date.now() < target || Date.now() - target > 50))
+                return refuse("Missed the single-click dispatch window.");
             const dispatched = Symbol.for("auto-chope-seat.dispatched");
             if (button[dispatched])
                 return refuse("A click was already dispatched for this form.");
             const dispatchedAt = Date.now();
             const lateness = dispatchedAt - target;
-            const lateFallback = lateness > tolerance && allow_late_retry;
-            if (lateness < 0 || (lateness > tolerance && !lateFallback))
-                return {clicked: false, reason: lateness < 0
-                    ? "The clock is earlier than the scheduled time."
-                    : `The ${tolerance} ms dispatch deadline was missed.`, lateness_ms: lateness};
             button[dispatched] = true;
             let eventAt = null;
-            let blocked = false;
             const guard = event => {
                 if (event.target !== button && !button.contains(event.target)) return;
-                eventAt = Date.now();
-                if (eventAt < target || (!lateFallback && eventAt - target > tolerance)) {
+                if (eventAt !== null) {
                     event.preventDefault();
                     event.stopImmediatePropagation();
-                    blocked = true;
                     return;
                 }
+                eventAt = Date.now();
                 if (typeof window.reportChopeClick === "function")
                     window.reportChopeClick(eventAt);
             };
@@ -425,17 +433,14 @@ class BookingForm:
             } finally {
                 window.removeEventListener("click", guard, {capture: true});
             }
-            if (blocked || eventAt === null)
-                return {clicked: false, reason: blocked
-                    ? `The ${tolerance} ms click-event deadline was missed; the event was blocked.`
-                    : "No click event was observed. Review the browser; no retry will be made.",
-                    lateness_ms: lateness, blocked_event_at: eventAt === null ? null : eventAt / 1000};
+            if (eventAt === null)
+                return {clicked: false,
+                    reason: "No click event was observed. Review the browser; no retry will be made.",
+                    lateness_ms: lateness};
             return {clicked: true, dispatched_at: dispatchedAt / 1000, lateness_ms: lateness,
-                late_fallback: lateFallback,
-                event_at: eventAt === null ? null : eventAt / 1000,
+                event_at: eventAt / 1000,
                 handler_returned_at: Date.now() / 1000};
-        }""", {**fields, "booking": booking, "target": target * 1000,
-               "tolerance": MAX_CLICK_LATENESS_MS})
+        }""", {**fields, "booking": booking, "target": target * 1000})
 
     def passenger_form_visible(self) -> bool:
         for frame in self.page.frames:
@@ -576,15 +581,15 @@ class BookingForm:
 
 
 class BookingRequestGate:
-    def __init__(self, target: float, stop: threading.Event, report: Callable[[dict], None] | None = None,
-                 keep_active: Callable[[], None] | None = None):
-        self.target = target
+    def __init__(self, target: float, stop: threading.Event,
+                 report: Callable[[dict], None] | None = None):
+        self.target_ns = round(target * 1_000_000_000)
         self.stop = stop
+        self.report = report
         self.claimed = False
         self.expired = False
+        self.finished = False
         self.timing = {}
-        self.report = report
-        self.keep_active = keep_active
 
     def publish(self):
         if self.report is not None:
@@ -601,30 +606,42 @@ class BookingRequestGate:
         if self.claimed or self.expired:
             route.abort("blockedbyclient")
             return
+        # Claim before any browser command, including an uncertain continuation.
         self.claimed = True
-        self.timing["request_held_at"] = time.time()
-        self.publish()
-        next_focus = time.monotonic()
-        while not self.stop.is_set():
-            remaining = self.target - time.time()
-            if remaining <= 0:
-                break
-            if self.keep_active is not None and remaining > DISPATCH_LEAD and time.monotonic() >= next_focus:
-                self.keep_active()
-                next_focus = time.monotonic() + FOREGROUND_INTERVAL
-            self.stop.wait(min(0.001, remaining))
-        checked = time.time()
-        offset = (checked - self.target) * 1000
-        if self.stop.is_set() or not 0 <= offset <= MAX_CLICK_LATENESS_MS:
+        try:
+            self.release(route)
+        finally:
+            self.finished = True
+
+    def release(self, route: Route):
+        intercepted_ns = time.time_ns()
+        self.timing["request_held_at"] = intercepted_ns / 1_000_000_000
+        self.timing["request_intercept_offset_ms"] = (intercepted_ns - self.target_ns) / 1_000_000
+        ready = not self.stop.is_set()
+        if ready and intercepted_ns < self.target_ns:
+            self.publish()
+            ready = wait_until(self.target_ns, self.stop)
+        checked_ns = time.time_ns()
+        offset = (checked_ns - self.target_ns) / 1_000_000
+        self.timing["request_release_offset_ms"] = offset
+        if not ready or self.stop.is_set() or not 0 <= offset <= MAX_RELEASE_LATENESS_MS:
             self.timing["request_release_blocked"] = True
-            self.timing["request_release_offset_ms"] = offset
+            if not ready or self.stop.is_set():
+                reason = "Stopped before release"
+            elif intercepted_ns > self.target_ns + MAX_RELEASE_LATENESS_MS * 1_000_000:
+                reason = ("POST reached the gate after the "
+                          f"0-{MAX_RELEASE_LATENESS_MS} ms local release window "
+                          f"({self.timing['request_intercept_offset_ms']:+.3f} ms at interception)")
+            else:
+                reason = f"Local wait/check missed 0-{MAX_RELEASE_LATENESS_MS} ms release window ({offset:+.3f} ms)"
+            self.timing["request_release_reason"] = reason
             route.abort("blockedbyclient")
             self.publish()
             return
-        # This is the protocol-call time, not evidence of network transmission.
-        self.timing["request_release_called_at"] = checked
+        # This timestamp measures the local continuation call, not network transmission.
+        self.timing["request_release_called_at"] = checked_ns / 1_000_000_000
         route.continue_()
-        self.timing["request_release_returned_at"] = time.time()
+        self.timing["request_release_returned_at"] = time.time_ns() / 1_000_000_000
         self.publish()
 
 
@@ -633,7 +650,7 @@ class Controller:
         self.lock = threading.Lock()
         self.commands = queue.Queue()
         self.stop = threading.Event()
-        self.state = {"status": "idle", "message": "Enter the booking and schedule the retrieval time.", "target": None}
+        self.state = {"status": "idle", "message": "Enter the booking and airport-local check-in time.", "target": None}
         self.worker = threading.Thread(target=self.run, daemon=True)
         self.playwright = None
         self.browser = None
@@ -647,7 +664,7 @@ class Controller:
         self.trace_sessions = []
         self.network_records = {}
         self.trace_pnr = ""
-        self.request_mode = True
+        self.request_mode = False
         self.history = []
         self.schedule_zone = ""
         self.next_foreground = 0
@@ -657,8 +674,7 @@ class Controller:
             return
         with self.lock:
             timing = self.click_timing
-            lead = REQUEST_PREPARE_LEAD + 1 if timing and timing.get("request_mode") else DISPATCH_LEAD
-            if timing is None or event["wallTime"] < timing["target"] - lead:
+            if timing is None or event["wallTime"] < timing["target"] - FINAL_CHECK_LEAD - 1:
                 return
             request = event["request"]
             url = urlsplit(request["url"])
@@ -717,22 +733,17 @@ class Controller:
             if self.click_timing is None:
                 return
             self.click_timing.update(clicked=True, event_at=stamp / 1000)
-            self.history.append({"at": stamp / 1000, "action": "Click event observed; request construction"})
-            if self.click_timing.get("request_mode"):
-                return
-            self.state = {"status": "observing",
-                          "message": "Retrieve Booking's click event was observed. Waiting for Scoot's request and result; no second click will be made.",
-                          "target": None}
+            self.history.append({"at": stamp / 1000, "action": "Retrieve Booking click observed; no retry"})
 
     def request_observed(self, request):
-        if request.resource_type not in {"xhr", "fetch"}:
+        if not (request.method == "POST" and urlsplit(request.url).scheme == BOOKING_REQUEST_SCHEME
+                and urlsplit(request.url).hostname == BOOKING_REQUEST_HOST
+                and urlsplit(request.url).path == BOOKING_REQUEST_PATH):
             return
         with self.lock:
             if self.click_timing is None or self.observed_request is not None:
                 return
             observed = time.time()
-            if observed < self.click_timing["target"]:
-                return
             self.observed_request = request
             self.click_timing["first_request_at"] = observed
 
@@ -758,16 +769,16 @@ class Controller:
                 return
             self.click_timing.update(timing)
             if timing.get("request_release_blocked"):
-                action = "Local release blocked: cancelled or outside 0-5 ms window"
-                stamp = time.time()
-            elif "request_release_called_at" in timing:
-                action = "Local release call completed; waiting for response (transmission time unverified)"
-                stamp = timing["request_release_called_at"]
+                message = timing["request_release_reason"] + ". POST aborted; no retry."
+            elif "request_release_returned_at" in timing:
+                message = "Local POST release call completed; transmission and server receipt unverified."
+            elif timing["request_held_at"] < self.click_timing["target"]:
+                message = "Booking POST held locally. Armed for API release at the entered check-in time."
             else:
-                action = "Booking POST held locally; counting down to scheduled release"
-                stamp = timing["request_held_at"]
-            self.history.append({"at": stamp, "action": action})
-            self.state = {"status": "submitting", "message": action, "target": self.click_timing["target"]}
+                message = "Booking POST intercepted at or after the target; release is not yet confirmed."
+            if not timing.get("request_release_blocked"):
+                self.history.append({"at": time.time(), "action": message})
+            self.state = {"status": "submitting", "message": message, "target": self.click_timing["target"]}
 
     def snapshot(self) -> dict:
         with self.lock:
@@ -780,7 +791,7 @@ class Controller:
                     "click_timing": ({**self.click_timing,
                                       "requests": [dict(record) for record in self.click_timing.get("requests", [])]}
                                      if self.click_timing is not None else None),
-                    "prepare_at": target - PREPARE_LEAD if target else None}
+                    "prepare_at": None}
 
     def submit(self, action: str, data: dict):
         if action not in {"schedule", "cancel", "show_browser"}:
@@ -789,7 +800,7 @@ class Controller:
             status = self.state["status"]
             if action == "show_browser":
                 if not self.browser_open:
-                    raise ValueError(f"The Scoot browser opens {PREPARE_LEAD // 60} minutes before the retrieval time.")
+                    raise ValueError("The Scoot browser opens when preparation starts.")
                 if status in {"working", "preparing", "submitting", "observing"}:
                     raise ValueError("Wait until the current browser action completes.")
                 self.commands.put((action, {}))
@@ -798,13 +809,14 @@ class Controller:
                 if status in ACTIVE_STATUSES:
                     raise ValueError("Cancel the current schedule before scheduling another booking.")
                 payload = booking_input(data)
-                payload = {"booking": payload, "target": scheduled_timestamp({**data, "timezone": payload["timezone"]}),
-                           "request_mode": True}
+                checkin = scheduled_timestamp({**data, "timezone": payload["timezone"]})
+                payload = {"booking": payload, "checkin": checkin,
+                           "target": checkin - 1, "request_mode": False}
                 if payload["target"] - time.time() < MIN_SCHEDULE_LEAD:
                     raise ValueError(f"Schedule at least {MIN_SCHEDULE_LEAD} seconds ahead so the browser can be prepared.")
             else:
                 if status in {"submitting", "observing"}:
-                    raise ValueError("The click is already in progress and cannot be undone.")
+                    raise ValueError("Retrieval has begun. A dispatched click cannot be undone.")
                 if status not in {"scheduled", "preparing", "ready"}:
                     raise ValueError("There is no scheduled retrieval to cancel.")
                 payload = {}
@@ -829,7 +841,7 @@ class Controller:
             args=["--disable-background-timer-throttling", "--disable-renderer-backgrounding",
                   "--disable-backgrounding-occluded-windows"])
         context = self.browser.new_context(viewport={"width": 1280, "height": 900},
-                                          service_workers="block" if self.request_mode else "allow")
+                                          service_workers="block")
         context.on("page", self.attach_request_trace)
         self.page = context.new_page()
         self.page.bring_to_front()
@@ -879,10 +891,6 @@ class Controller:
             if target - now > DISPATCH_LEAD and now >= self.next_foreground:
                 self.page.bring_to_front()
                 self.next_foreground = time.time() + FOREGROUND_INTERVAL
-            if job.get("request_mode") and target - now <= REQUEST_PREPARE_LEAD:
-                job["click_fields"] = BookingForm(self.page).arm_click(job["booking"])
-                self.click(job)
-                return None
             if now >= target - DISPATCH_LEAD:
                 self.click(job)
                 return None
@@ -918,13 +926,9 @@ class Controller:
             self.update("preparing", f"Preparation attempt {job['attempts']} failed: {job['last_error']}\nRetrying at {retry_at} (airport time). Nothing has been clicked.", target)
             return job
         job["ready"] = True
-        BookingForm(self.page).show_click_target(
-            job["booking"], target - REQUEST_PREPARE_LEAD if job.get("request_mode") else target)
+        BookingForm(self.page).show_click_target(job["booking"], target)
         job["next_check"] = time.time() + RETRY_INTERVAL
-        message = (f"Page loaded and booking filled. Standing by with Scoot kept active; the request is built "
-                   f"and held {REQUEST_PREPARE_LEAD} s before release."
-                   if job.get("request_mode") else
-                   "Entries filled and verified. Standing by to click Retrieve Booking once at the scheduled time.")
+        message = "Armed. Entries verified; Retrieve Booking will be clicked once at check-in minus one second."
         self.update("ready", message, target)
         return job
 
@@ -933,80 +937,47 @@ class Controller:
         with self.lock:
             if self.state["status"] != "ready":
                 return
-            self.state = {"status": "submitting", "message": f"Checking the {MAX_CLICK_LATENESS_MS} ms dispatch deadline…", "target": due}
+            self.state = {"status": "submitting", "message": "Waiting for the single retrieval click.", "target": due}
         if "click_fields" not in job:
             raise ValueError("Final verification was not completed before the deadline. No click was made.")
         with self.lock:
-            self.click_timing = {"target": due, "request_mode": bool(job.get("request_mode"))}
+            self.click_timing = {"target": due, "checkin": job.get("checkin", due + 1), "request_mode": False}
             self.observed_request = None
             self.network_records = {}
             self.trace_pnr = job["booking"]["pnr"]
-        gate = None
+        # Enter the final local wait before the target. A missed deadline never causes a late fallback.
+        if time.time() > due or not wait_until(round(due * 1e9), self.stop) or self.stop.is_set():
+            self.update("error", "Stopped or missed the dispatch deadline. No click or retry was made.")
+            return
+        if time.time() - due > MAX_RELEASE_LATENESS_MS / 1000:
+            self.update("error", "Missed the dispatch deadline. No click or retry was made.")
+            return
         try:
-            if job.get("request_mode"):
-                gate = BookingRequestGate(due, self.stop, self.gate_progress, self.page.bring_to_front)
-                gate.install(self.page.context)
-                self.update("submitting", "Constructing Scoot's request early, holding it locally until the schedule. No cancellation once submission begins.", due)
-            result = BookingForm(self.page).dispatch_click(
-                {**job["click_fields"], "wait_until_target": gate is None, "allow_late_retry": True},
-                job["booking"], time.time() if gate is not None else due)
-            if gate is not None:
-                while not gate.claimed and time.time() <= due + MAX_CLICK_LATENESS_MS / 1000 and not self.stop.is_set():
-                    if not result["clicked"]:
-                        break
-                    self.page.wait_for_timeout(5)
-                if not gate.claimed:
-                    gate.expired = True
-                    raise ValueError("The booking request was not intercepted before the release deadline. Later matching requests will be blocked.")
-        except Exception as error:
-            if gate is not None:
-                gate.expired = True
+            result = BookingForm(self.page).dispatch_click(job["click_fields"], {**job["booking"], "timed_dispatch": True}, due)
+            with self.lock:
+                self.click_timing.update(result)
+            if not result["clicked"]:
+                self.update("error", result["reason"] + " No retry will be made.")
+                return
+            self.update("observing", "Retrieve Booking clicked once. Waiting for the booking API response; no retry.")
+            deadline = time.monotonic() + RESULT_WATCH
+            while not self.stop.is_set() and time.monotonic() < deadline:
                 with self.lock:
-                    self.click_timing.update(gate.timing)
-            self.update("uncertain", f"Click dispatch could not be confirmed ({type(error).__name__}: {error}). "
-                        "A click may have been sent. Review the Scoot browser; no retry will be made.")
-            return
-        with self.lock:
-            self.click_timing.update(result)
-            if gate is not None:
-                self.click_timing.update(gate.timing)
-                self.click_timing["request_mode"] = True
-        if gate is not None and gate.timing.get("request_release_blocked"):
-            self.update("error", "Request release was cancelled or missed the 5 ms local window. The intercepted POST was aborted; no retry will be made.")
-            return
-        if not result["clicked"]:
-            raise ValueError(f"{result['reason']} No retry will be made.")
-        note = ("The held request was released to the browser. Actual network timing must be checked separately. "
-                if gate is not None else
-                f"The {MAX_CLICK_LATENESS_MS} ms deadline was missed before dispatch; one immediate late fallback click was made. "
-                if result.get("late_fallback") else "Retrieve Booking was clicked once. ")
-        self.update("observing", note + "Watching the result and capturing the passenger form if shown. No second retrieval click will be made.")
-        try:
-            self.page.wait_for_timeout(100)
-            page = self.visible_page()
-            page.bring_to_front()
-            outcome = BookingForm(page).observe_result(stop=self.stop, page_provider=self.visible_page)
+                    received = self.click_timing.get("first_response_status")
+                if received is not None:
+                    self.update("submitted", f"Booking retrieval API returned HTTP {received}. Review the same Scoot browser and continue manually. Check-in and seat availability are not confirmed.")
+                    return
+                self.page.wait_for_timeout(50)
+            self.update("uncertain", "Booking retrieval response unconfirmed (timeout or stopped). Review the same browser; no retry will be made.")
         except Exception as error:
-            outcome = {"status": "submitted",
-                       "message": f"Retrieve Booking was clicked once, but the result could not be read ({type(error).__name__}). "
-                                  "Review the Scoot browser yourself; no further actions or retries will be made."}
-        self.update(outcome["status"], (note if gate is not None or result.get("late_fallback") else "") + outcome["message"])
+            self.update("uncertain", f"Retrieval outcome unconfirmed ({type(error).__name__}). Review the same browser; no retry will be made.")
 
     def scheduled_message(self, job: dict) -> str:
-        zone = ZoneInfo(job["booking"]["timezone"])
-        at = datetime.fromtimestamp(job["target"], zone).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-        opens = datetime.fromtimestamp(job["target"] - PREPARE_LEAD, zone).strftime("%H:%M:%S")
-        note = f" {self.browser_info['note']}" if self.browser_info["note"] else ""
-        if job.get("request_mode"):
-            return (f"Request release scheduled for {at} ({zone.key}). {self.browser_info['name']} opens at {opens}. "
-                    f"The button is clicked {REQUEST_PREPARE_LEAD} seconds early to construct the normal request; "
-                    "the matching POST is held locally and released only if its local check is within 0-5 ms. "
-                    "Network/server timing is not guaranteed. No late fallback or resubmission. "
-                    "Tokens may expire; successful passenger-page continuation is unverified.")
-        return (f"Scheduled for {at} ({zone.key}). {self.browser_info['name']} launches at {opens} to load Scoot and fill the entries, "
-                f"then targets a Retrieve Booking click within {MAX_CLICK_LATENESS_MS} ms of the scheduled time.{note} "
-                "If the pre-click deadline is missed, one immediate late fallback is allowed only before any click is dispatched. "
-                "No retry follows a sent, blocked, or uncertain click. Scoot's receipt time is not guaranteed. Keep the laptop awake, plugged in and open.")
+        zone = job["booking"]["timezone"]
+        return (f"Check-in: {display_time(job['checkin'], zone)}. "
+                f"Retrieve Booking dispatch target: {display_time(job['target'], zone)} ({zone}), exactly one second earlier. "
+                "Not armed until the loaded form is verified. Keep the app running, Mac awake and lid open. "
+                "Use Cancel schedule before dispatch. One click; no retries; subsequent check-in steps are manual.")
 
     def run(self):
         try:
@@ -1034,7 +1005,7 @@ class Controller:
             try:
                 if action == "schedule":
                     self.close_browser()
-                    self.request_mode = payload.get("request_mode", True)
+                    self.request_mode = False
                     with self.lock:
                         self.click_timing = None
                         self.observed_request = None
@@ -1043,7 +1014,7 @@ class Controller:
                         self.schedule_zone = payload["booking"]["timezone"]
                     self.browser_info = default_browser()
                     job = {**payload, "ready": False, "attempts": 0, "last_error": "",
-                           "next_attempt": payload["target"] - PREPARE_LEAD}
+                           "next_attempt": time.time()}
                     self.keep_awake(True)
                     self.update("scheduled", self.scheduled_message(job), job["target"])
                 elif action == "cancel":
@@ -1067,8 +1038,8 @@ class Controller:
 
 STATUS_LABELS = {
     "idle": "Ready to schedule", "working": "Processing action", "scheduled": "Scheduled",
-    "preparing": "Preparing browser", "ready": "Ready and standing by",
-    "submitting": "Retrieving booking", "observing": "Reading the result",
+    "preparing": "Preparing browser", "ready": "Armed - waiting for retrieval click",
+    "submitting": "Dispatching retrieval click", "observing": "Reviewing Scoot response",
     "submitted": "Review your result", "airport_queue": "Airport counter required",
     "unsuccessful": "Check-in unsuccessful", "not_open_yet": "Check-in opens later",
     "checkin_closed": "Check-in closed", "pnr_not_found": "Booking not found",
@@ -1078,21 +1049,41 @@ STATUS_LABELS = {
 }
 PROGRESS_STEPS = (
     "Schedule confirmed",
-    f"Open browser & fully load Scoot (T-{PREPARE_LEAD // 60} min)",
+    "Open browser & fully load Scoot",
     "Fill booking & keep page active",
-    f"Construct & hold request (T-{REQUEST_PREPARE_LEAD} s)",
-    "Release request at scheduled time",
-    "Response received - continue in Scoot browser",
+    "Verify form & arm single click",
+    "Click at check-in minus one second",
+    "Review result in Scoot browser (no seat confirmed)",
 )
 FINAL_STEP = len(PROGRESS_STEPS) - 1
+
+
+def display_time(stamp: float, timezone_name: str = "") -> str:
+    zone = ZoneInfo(timezone_name) if timezone_name else None
+    return datetime.fromtimestamp(stamp, zone).isoformat(sep=" ", timespec="milliseconds")
+
+
+def status_label(state: dict) -> str:
+    if state.get("request_mode") is False and state["status"] == "submitting":
+        return "Dispatching single retrieval click"
+    if state["status"] == "submitting":
+        timing = state.get("click_timing") or {}
+        if timing.get("request_release_blocked"):
+            return "POST aborted - no retry"
+        if timing.get("request_release_returned_at") is not None:
+            return "Local release acknowledged"
+        if timing.get("request_release_called_at") is not None:
+            return "Release attempted - unconfirmed"
+        if timing.get("request_held_at") is not None:
+            return "POST intercepted - awaiting release"
+    return STATUS_LABELS.get(state["status"], state["status"])
 
 
 def progress_state(state: dict) -> int:
     """Index of the current step; FINAL_STEP + 1 means all done, -1 means stopped or idle."""
     status = state["status"]
-    timing = state.get("click_timing") or {}
     if status == "submitting":
-        return 4 if timing.get("request_held_at") is not None else 3
+        return 4 if (state.get("click_timing") or {}).get("request_held_at") is not None else 3
     steps = {"scheduled": 0, "preparing": 1, "ready": 2, "observing": FINAL_STEP}
     if status in steps:
         return steps[status]
@@ -1107,37 +1098,42 @@ def stage_countdown(state: dict) -> str:
     if target is None:
         target = timing.get("target")
     if target is None:
-        return "No release scheduled.\nEnter the booking, choose the date and time, then select Confirm schedule."
+        return "No retrieval scheduled.\nEnter the booking and local check-in time, then select Confirm schedule."
+    if state.get("request_mode") is False:
+        zone = state.get("timezone") or ""
+        checkin = timing.get("checkin", target + 1)
+        return (f"Check-in time: {display_time(checkin, zone)}\n"
+                f"Retrieve Booking dispatch target: {display_time(target, zone)} (check-in minus one second)\n"
+                f"{status_label(state)}. Keep the app and browser open; no automatic retry.")
     status = state["status"]
     active = status in {"scheduled", "preparing", "ready", "submitting"}
     now = state["now"]
-    zone = ZoneInfo(state["timezone"]) if state.get("timezone") else None
-
     def clock(stamp):
-        return datetime.fromtimestamp(stamp, zone).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        return display_time(stamp, state.get("timezone") or "")
 
     def stage(label, stamp, done_text):
         remaining = stamp - now
         when = f"in {remaining:.3f} s" if remaining >= 0 else (done_text if not active or status != "scheduled" else "starting")
         return f"{label:<28}{clock(stamp)}   {when}"
 
-    lines = [f"Release target: {clock(target)}  ({state.get('timezone') or 'computer local time'})", ""]
-    lines.append(stage("1  Open browser & load", target - PREPARE_LEAD, "done"))
+    lines = [f"API release target: {clock(target)}  ({state.get('timezone') or 'computer local time'}; entered check-in time)", ""]
+    lines.append(stage("1  Open browser & load", target - PREPARE_LEAD, "planned time passed; see activity log"))
     if timing.get("request_held_at") is not None:
-        lines.append(f"{'2  Construct & hold POST':<28}{clock(timing['request_held_at'])}   held")
+        lines.append(f"{'2  Construct & hold POST':<28}{clock(timing['request_held_at'])}   intercepted locally")
     else:
-        lines.append(stage("2  Construct & hold POST", target - REQUEST_PREPARE_LEAD,
-                           "not held" if not active else "in progress"))
-    if timing.get("request_release_called_at") is not None:
-        offset = (timing["request_release_called_at"] - target) * 1000
-        lines.append(f"{'3  Release request':<28}{clock(target)}   released {offset:+.1f} ms (local call)")
-    elif timing.get("request_release_blocked"):
-        lines.append(f"{'3  Release request':<28}{clock(target)}   blocked - missed 0-{MAX_CLICK_LATENESS_MS} ms window")
+        lines.append(stage("2  Construct & hold POST", target - REQUEST_PREPARE_LEAD, "not intercepted"))
+    if timing.get("request_release_blocked"):
+        lines.append(f"3  API release aborted: {timing['request_release_reason']}")
+    elif timing.get("request_release_returned_at") is not None:
+        offset = timing["request_release_offset_ms"]
+        lines.append(f"3  Local API release call: {offset:+.3f} ms; transmission unverified")
+    elif timing.get("request_release_called_at") is not None:
+        lines.append("3  API release attempted; completion unconfirmed")
     else:
-        lines.append(stage("3  Release request", target, "not released"))
+        lines.append(stage("3  Release original POST", target, "no release confirmed"))
     lines.append("")
     if active:
-        lines.append("Waiting for Scoot's response..." if timing.get("request_release_called_at") is not None
+        lines.append("Waiting for Scoot's response..." if timing.get("request_release_returned_at") is not None
                      else "Keep this app and the Scoot browser open.")
     elif status == "observing":
         lines.append("Waiting for Scoot's response...")
@@ -1152,21 +1148,20 @@ def booking_request_summary(timing: dict) -> list[str]:
         return ["Booking endpoint request not observed; unrelated requests do not establish booking timing."]
     lines = []
     for record in requests:
-        if timing.get("request_mode"):
-            lines.append("Booking request constructed/intercepted. Chromium's request-start event may precede the hold; "
-                         "it must NOT be treated as transmission time or evaluated against the release target.")
-            if timing.get("request_release_called_at"):
-                offset = (timing["request_release_called_at"] - timing["target"]) * 1000
-                lines.append(f"Local release call offset: {offset:+.1f} ms; actual transmission/server receipt unverified.")
-            continue
         offset = (record["started_at"] - timing["target"]) * 1000
-        within = 0 <= offset <= MAX_CLICK_LATENESS_MS
-        lines.append(f"Booking request start: {datetime.fromtimestamp(record['started_at']).strftime('%H:%M:%S.%f')[:-3]} "
-                     f"({offset:+.1f} ms from schedule; {'WITHIN' if within else 'OUTSIDE'} 0-{MAX_CLICK_LATENESS_MS} ms target)")
+        lines.append(f"Booking request initiation: {display_time(record['started_at'])} "
+                     f"({offset:+.1f} ms from dispatch target; diagnostic only). "
+                     "Chromium initiation is NOT transmission and may precede local interception.")
+        if timing.get("request_release_called_at") is not None:
+            offset = (timing["request_release_called_at"] - timing["target"]) * 1000
+            lines.append(f"Local release call offset: {offset:+.3f} ms; transmission/server receipt unverified.")
+        if timing.get("request_release_blocked"):
+            lines.append("Release aborted: " + timing["request_release_reason"])
         if timing.get("event_at") is not None:
             click_offset = (timing["event_at"] - timing["target"]) * 1000
             delay = (record["started_at"] - timing["event_at"]) * 1000
-            lines.append(f"Schedule-to-click: {click_offset:+.1f} ms; click-to-booking-request: {delay:+.1f} ms")
+            lines.append(f"Construction click from dispatch target: {click_offset:+.1f} ms; "
+                         f"click-to-booking-request: {delay:+.1f} ms (page request delay)")
     return lines
 
 
@@ -1181,12 +1176,12 @@ def request_trace_summary(timing: dict | None) -> str:
     lines.extend(booking_request_summary(timing))
     lines.append("")
     for index, record in enumerate(timing["requests"], 1):
-        started = datetime.fromtimestamp(record["started_at"]).strftime("%H:%M:%S.%f")[:-3]
+        started = display_time(record["started_at"])
         offset = (record["started_at"] - timing["target"]) * 1000
         lines.append(f"{index}. {record['method']} {record['endpoint']}")
         if record.get("booking_request"):
             lines.append("   MATCHED BOOKING ENDPOINT (does not prove server receipt or queue position)")
-        lines.append(f"   {record['type']}; initiator: {record['initiator']}; start: {started}; scheduled offset: {offset:+.1f} ms")
+        lines.append(f"   {record['type']}; initiator: {record['initiator']}; initiation: {started}; API target offset: {offset:+.1f} ms")
         if timing.get("event_at") is not None:
             lines.append(f"   Click-to-request: {(record['started_at'] - timing['event_at']) * 1000:+.1f} ms")
         if "status" in record:
@@ -1212,46 +1207,59 @@ def headline_countdown(state: dict) -> tuple[str, str]:
         target = timing.get("target")
     status = state["status"]
     if target is None:
-        return "--:--:--", "No release scheduled"
-    zone = ZoneInfo(state["timezone"]) if state.get("timezone") else None
-    clock = datetime.fromtimestamp(target, zone).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        return "--:--:--", "No retrieval scheduled"
+    if state.get("request_mode") is False:
+        remaining = max(0, target - state["now"])
+        hours, rest = divmod(int(remaining), 3600)
+        minutes, seconds = divmod(rest, 60)
+        return (f"{hours:02d}:{minutes:02d}:{seconds:02d}",
+                f"{status_label(state)} — click target {display_time(target, state.get('timezone') or '')}")
+    clock = display_time(target, state.get("timezone") or "")
     remaining = target - state["now"]
-    if status in {"scheduled", "preparing", "ready"} and remaining > 0:
+    if status in {"scheduled", "preparing", "ready", "submitting"} and remaining > 0:
         days, rest = divmod(int(remaining), 86400)
         hours, rest = divmod(rest, 3600)
         minutes, seconds = divmod(rest, 60)
         text = f"{days}d {hours:02d}:{minutes:02d}:{seconds:02d}" if days else f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-        return text, f"until release at {clock}"
+        return text, f"until API release at {clock} (entered check-in time)"
     if status in {"submitting", "observing"}:
-        return "00:00:00", "Released - waiting for Scoot's response"
+        return "00:00:00", ("POST released locally - waiting for Scoot" if timing.get("request_release_returned_at") is not None
+                             else "API release not yet confirmed")
     if status in ACTIVE_STATUSES:
-        return "00:00:00", f"Release at {clock}"
-    return "--:--:--", f"{STATUS_LABELS.get(status, status)} - release was {clock}"
+        return "00:00:00", f"API release target {clock}"
+    return "--:--:--", f"{status_label(state)} - API target was {clock}"
 
 
-def timing_table_rows(timing: dict | None) -> list[tuple[str, str, str, str]]:
+def timing_table_rows(timing: dict | None, timezone_name: str = "") -> list[tuple[str, str, str, str]]:
     if not timing:
         return []
     rows = []
 
     def add(label, stamp, meaning):
         if stamp is not None:
-            rows.append((label, datetime.fromtimestamp(stamp).strftime("%H:%M:%S.%f")[:-3],
+            rows.append((label, display_time(stamp, timezone_name),
                          f"{(stamp - timing['target']) * 1000:+.1f} ms", meaning))
 
-    add("Scheduled release", timing.get("target"), "Target")
-    add("Construction click", timing.get("event_at"), "Builds the request early; not sent")
-    add("Blocked click", timing.get("blocked_event_at"), "Event blocked; no retry")
-    add("Request held", timing.get("request_held_at"), "POST paused locally")
-    add("Local release call", timing.get("request_release_called_at"), "NOT proof of transmission")
-    if timing.get("request_release_blocked"):
-        offset = timing.get("request_release_offset_ms")
-        rows.append(("Release blocked", "-", f"{offset:+.1f} ms" if offset is not None else "-",
-                     "Deadline missed or cancelled; no retry"))
+    if timing.get("request_mode") is False:
+        add("Check-in time", timing.get("checkin"), "Entered airport-local check-in time")
+        add("Click dispatch target", timing.get("target"), "Check-in minus exactly one second")
+        add("Retrieve Booking click", timing.get("event_at"), "Local click; server receipt unverified")
+        add("Booking API response", timing.get("first_response_at"), f"HTTP {timing.get('first_response_status', 'unconfirmed')}")
+    else:
+        add("API release target", timing.get("target"), "Entered check-in time; no subtraction")
+    if timing.get("request_mode") is not False:
+        add("Construction click", timing.get("event_at"), "Builds POST early; NOT API transmission")
     for record in timing.get("requests", []):
         if record.get("booking_request"):
-            add("Booking request start", record["started_at"],
-                "May precede hold; NOT transmission" if timing.get("request_mode") else "Browser request start")
+            add("Booking request initiation", record["started_at"], "Can precede interception; NOT transmission")
+    add("POST intercepted", timing.get("request_held_at"), "Gate entry; may already be late, not proof of arming")
+    add("Local release call", timing.get("request_release_called_at"), "NOT proof of transmission/server receipt")
+    add("Release call returned", timing.get("request_release_returned_at"), "Browser protocol acknowledged")
+    if timing.get("request_release_blocked"):
+        rows.append(("Release aborted", "-", f"{timing['request_release_offset_ms']:+.3f} ms",
+                     timing["request_release_reason"]))
+    for record in timing.get("requests", []):
+        if record.get("booking_request"):
             if "status" in record:
                 add("Booking response", record["response_at"], f"HTTP {record['status']}")
             if "failure" in record:
@@ -1259,7 +1267,7 @@ def timing_table_rows(timing: dict | None) -> list[tuple[str, str, str, str]]:
     return rows
 
 
-def request_table_rows(timing: dict | None) -> list[tuple[str, ...]]:
+def request_table_rows(timing: dict | None, timezone_name: str = "") -> list[tuple[str, ...]]:
     if not timing:
         return []
     rows = []
@@ -1277,7 +1285,7 @@ def request_table_rows(timing: dict | None) -> list[tuple[str, ...]]:
         rows.append((
             "Booking" if record.get("booking_request") else "Other",
             record["method"], record["endpoint"], record["type"], record["initiator"],
-            datetime.fromtimestamp(record["started_at"]).strftime("%H:%M:%S.%f")[:-3],
+            display_time(record["started_at"], timezone_name),
             f"{(record['started_at'] - timing['target']) * 1000:+.1f} ms",
             f"{(record['started_at'] - timing['event_at']) * 1000:+.1f} ms" if timing.get("event_at") is not None else "-",
             response,
@@ -1372,15 +1380,15 @@ class DesktopApp:
         header.pack(fill="x", pady=(0, 14))
         ttk.Button(header, text="Quit app", command=self.close).pack(side="right", anchor="n")
         ttk.Label(header, text="auto-chope-seat", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(header, text="Releases Scoot's booking retrieval at the exact departure-airport time you set.",
+        ttk.Label(header, text="Follows SKILL.md: clicks Retrieve Booking once, one second before airport-local check-in time.",
                   style="Subtitle.TLabel").pack(anchor="w")
 
         self.countdown = tk.StringVar()
         self.countdown_big = tk.StringVar(value="--:--:--")
-        self.countdown_caption = tk.StringVar(value="No release scheduled")
+        self.countdown_caption = tk.StringVar(value="No retrieval scheduled")
         self.countdown_panel = ttk.Frame(shell, style="Hero.TFrame", padding=(20, 16))
         self.countdown_panel.pack(fill="x", pady=(6, 14))
-        ttk.Label(self.countdown_panel, text="RELEASE COUNTDOWN", style="HeroEyebrow.TLabel").pack(anchor="w")
+        ttk.Label(self.countdown_panel, text="RETRIEVAL COUNTDOWN", style="HeroEyebrow.TLabel").pack(anchor="w")
         self.timer_label = ttk.Label(self.countdown_panel, textvariable=self.countdown_big,
                                      style="HeroTimer.TLabel")
         self.timer_label.pack(anchor="w")
@@ -1422,9 +1430,9 @@ class DesktopApp:
         ttk.Label(booking, textvariable=self.timezone_note, wraplength=400, style="Muted.TLabel").pack(anchor="w", pady=6)
         schedule = ttk.LabelFrame(form, text="2 · Schedule", padding=16)
         schedule.pack(fill="x", pady=14)
-        ttk.Label(schedule, text="Use the departure airport's local time (not the flight time).",
+        ttk.Label(schedule, text="Enter your airport-local check-in time. Retrieve Booking is clicked one second earlier.",
                   wraplength=400, style="Muted.TLabel").pack(anchor="w", pady=(0, 10))
-        ttk.Label(schedule, text="Release date (YYYY-MM-DD)").pack(anchor="w")
+        ttk.Label(schedule, text="Check-in date (YYYY-MM-DD)").pack(anchor="w")
         date_row = ttk.Frame(schedule)
         date_row.pack(fill="x", pady=(3, 10))
         date_entry = ttk.Entry(date_row, textvariable=self.date)
@@ -1441,7 +1449,7 @@ class DesktopApp:
                                           command=self.choose_date, padding=4)
         self.calendar_button.pack(side="left", padx=(6, 0))
         self.inputs.extend((date_entry, self.calendar_button))
-        self.field(schedule, "Release time (HH:mm:ss.SSS, e.g. 08:00:00.000)", ttk.Entry(schedule, textvariable=self.clock))
+        self.field(schedule, "Check-in time (HH:mm:ss.SSS, e.g. 08:00:00.000)", ttk.Entry(schedule, textvariable=self.clock))
         self.schedule_button = ttk.Button(schedule, text="Confirm schedule", style="Accent.TButton", command=self.schedule)
         self.schedule_button.pack(fill="x", pady=(8, 4))
         self.cancel_button = ttk.Button(schedule, text="Cancel schedule", command=lambda: self.send("cancel"))
@@ -1456,9 +1464,9 @@ class DesktopApp:
         ttk.Label(status_panel, text="Activity log (departure airport time)", style="Section.TLabel").pack(anchor="w", pady=(12, 0))
         self.history_log = self.make_log(status_panel, height=7)
         self.history_rows = []
-        ttk.Label(status_panel, text="Release timing (computer time)", style="Section.TLabel").pack(anchor="w", pady=(8, 0))
+        ttk.Label(status_panel, text="Retrieval timing (departure airport time)", style="Section.TLabel").pack(anchor="w", pady=(8, 0))
         self.timing_table = self.make_table(status_panel, [
-            ("Event", 160), ("Time", 115), ("From schedule", 115), ("Meaning", 300),
+            ("Event", 170), ("Airport-local time (UTC offset)", 275), ("From click target", 125), ("Meaning", 300),
         ], height=6)
         self.timing_rows = []
         ttk.Label(status_panel, textvariable=self.error, style="Error.TLabel", wraplength=400).pack(anchor="w", pady=4)
@@ -1472,9 +1480,11 @@ class DesktopApp:
             row=0, column=1, sticky="ew", padx=(4, 0))
         notes = ttk.LabelFrame(content, text="ⓘ Before you start", padding=14)
         notes.grid(row=1, column=0, columnspan=2, sticky="ew", pady=14)
-        ttk.Label(notes, wraplength=820, style="Muted.TLabel", text="Keep this app open, the Mac plugged in and the lid open; quitting cancels the schedule. "
-                  "One release only, no retries. The recorded release is the local call time, not Scoot's receipt time, "
-                  "and a passenger page does not confirm a seat. Passenger pages are saved locally and may contain personal data.").pack(anchor="w")
+        ttk.Label(notes, wraplength=820, style="Muted.TLabel", text=(
+            "Keep this app open, the Mac plugged in and the lid open. "
+            "Retrieve Booking is clicked once at check-in minus one second. Cancel before dispatch. "
+            "No automatic retries. Continue passenger details, baggage, seats and boarding passes manually. "
+            "Timing and HTTP success do not confirm check-in or a seat.")).pack(anchor="w")
         self.pnr.trace_add("write", self.normalize_pnr)
         self.departure.trace_add("write", self.departure_changed)
         self.timezone.trace_add("write", self.timezone_changed)
@@ -1502,7 +1512,7 @@ class DesktopApp:
         selected = max(today, selected)
         window = tk.Toplevel(self.root)
         window.configure(bg=BG)
-        window.title(f"Release date - {zone.key if zone else 'choose departure airport next'}")
+        window.title(f"Check-in date - {zone.key if zone else 'choose departure airport next'}")
         window.transient(self.root)
         ttk.Label(window, text=f"Departure timezone: {zone.key}" if zone else
                   "Preview uses the computer's date. Choose the departure airport before scheduling.",
@@ -1564,19 +1574,21 @@ class DesktopApp:
         window.configure(bg=BG)
         window.title("Network details - booking endpoint and other requests")
         window.geometry("1150x550")
-        ttk.Label(window, text="Request-start timestamps are NOT server receipt. With request holding they may precede "
-                  "the hold and are NOT transmission times. Booking labels match the exact POST endpoint, not check-in success.",
+        ttk.Label(window, text="Browser initiation may precede interception; it is NOT transmission or server receipt. "
+                  "All timestamps use the scheduled departure airport timezone with UTC offset. "
+                  "Booking labels match the exact POST endpoint, not check-in success.",
                   wraplength=1000, padding=10, style="Bg.TLabel").pack(anchor="w")
         table = self.make_table(window, [
             ("Kind", 80), ("Method", 65), ("Endpoint", 400), ("Type", 80), ("Initiator", 90),
-            ("Browser start", 115), ("From schedule", 115), ("From click", 110), ("Response", 300),
+            ("Browser initiation (airport time)", 275), ("From click target", 125), ("From retrieval click", 150), ("Response", 300),
         ], height=14)
         note = tk.StringVar()
         ttk.Label(window, textvariable=note, padding=10, style="Bg.TLabel").pack(anchor="w")
 
         def update():
-            timing = self.controller.snapshot().get("click_timing")
-            self.fill_table(table, request_table_rows(timing))
+            state = self.controller.snapshot()
+            timing = state.get("click_timing")
+            self.fill_table(table, request_table_rows(timing, state.get("timezone") or ""))
             count = len(timing.get("requests", [])) if timing else 0
             dropped = timing.get("requests_dropped", 0) if timing else 0
             note.set(f"{count} requests; {dropped} omitted. Snapshot only: select Refresh to update. "
@@ -1718,7 +1730,7 @@ class DesktopApp:
         state = self.controller.snapshot()
         self.state = state
         status = state["status"]
-        self.status.set(STATUS_LABELS.get(status, status))
+        self.status.set(status_label(state))
         self.message.set(state["message"])
         step = progress_state(state)
         for index, label in enumerate(self.steps):
@@ -1742,19 +1754,18 @@ class DesktopApp:
         else:
             timer_color = "#ffffff"
         self.timer_label.configure(foreground=timer_color)
-        # The stage breakdown only adds detail once a release target exists.
+        # The stage breakdown only adds detail once an API target exists.
         has_target = state.get("target") is not None or (state.get("click_timing") or {}).get("target") is not None
         if has_target and not self.countdown_label.winfo_manager():
             self.countdown_label.pack(fill="x")
         elif not has_target and self.countdown_label.winfo_manager():
             self.countdown_label.pack_forget()
-        zone = ZoneInfo(state["timezone"]) if state.get("timezone") else None
-        history = [(datetime.fromtimestamp(event["at"], zone).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3], event["action"])
+        history = [(display_time(event["at"], state.get("timezone") or ""), event["action"])
                    for event in state.get("history", [])]
         if history != self.history_rows:
             self.fill_log(self.history_log, history)
             self.history_rows = history
-        rows = timing_table_rows(state.get("click_timing"))
+        rows = timing_table_rows(state.get("click_timing"), state.get("timezone") or "")
         if rows != self.timing_rows:
             self.fill_table(self.timing_table, rows)
             self.timing_rows = rows

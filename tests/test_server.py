@@ -4,6 +4,7 @@ import unittest
 import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
+from datetime import datetime, timezone
 
 import server
 from app import Controller
@@ -43,9 +44,23 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(body["status"], "idle")
         self.assertEqual(body["status_label"], "Ready to schedule")
         self.assertEqual(body["headline"], "--:--:--")
-        self.assertIn("No release scheduled", body["stage_text"])
+        self.assertIn("No retrieval scheduled", body["stage_text"])
         self.assertEqual(len(body["steps"]), 6)
         self.assertFalse(body["active"])
+        self.assertFalse(body["can_cancel"])
+        self.assertEqual(body["release_policy"], server.RELEASE_POLICY)
+
+    def test_state_uses_shared_airport_timing_and_phase_label(self):
+        controller = server.ApiHandler.controller
+        controller.schedule_zone = "Asia/Singapore"
+        target = datetime(2027, 1, 2, tzinfo=timezone.utc).timestamp()
+        controller.click_timing = {"target": target, "request_held_at": target - 10}
+        controller.update("submitting", "Holding", target)
+        status, body = self.request("/api/state")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["status_label"], "Dispatching single retrieval click")
+        self.assertEqual(body["timing_rows"][0][1], "2027-01-02 08:00:00.000+08:00")
+        self.assertTrue(body["history"][0]["time"].endswith("+08:00"))
         self.assertFalse(body["can_cancel"])
 
     def test_stations_listed_with_timezones(self):
@@ -71,7 +86,7 @@ class ServerTests(unittest.TestCase):
         with urllib.request.urlopen(self.base + "/") as response:
             page = response.read().decode()
         self.assertEqual(response.status, 200)
-        self.assertIn("RELEASE COUNTDOWN", page)
+        self.assertIn("RETRIEVAL COUNTDOWN", page)
         self.assertIn("apple-mobile-web-app-capable", page)
 
 

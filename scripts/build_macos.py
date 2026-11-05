@@ -53,6 +53,8 @@ def main() -> None:
         "airportsdata",
         "--add-data",
         f"{ROOT / 'stations.json'}:.",
+        "--add-data",
+        f"{ROOT / 'SKILL.md'}:.",
         "--distpath",
         str(dist_dir),
         "--workpath",

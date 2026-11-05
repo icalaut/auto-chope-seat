@@ -87,10 +87,10 @@ th { color: var(--muted); background: #f3f4f6; }
 </div>
 <main>
   <h1>auto-chope-seat</h1>
-  <p class="subtitle">Releases Scoot's booking retrieval at the exact departure-airport time you set.</p>
+  <p class="subtitle">Clicks Retrieve Booking once, one second before airport-local check-in time.</p>
 
   <section class="hero">
-    <div class="eyebrow">RELEASE COUNTDOWN</div>
+    <div class="eyebrow">RETRIEVAL COUNTDOWN</div>
     <div class="timer" id="timer">--:--:--</div>
     <div class="caption" id="caption">Connecting…</div>
     <pre id="stage"></pre>
@@ -109,10 +109,10 @@ th { color: var(--muted); background: #f3f4f6; }
 
   <section class="card">
     <h2>2 · Schedule</h2>
-    <p class="note">Use the departure airport's local time (not the flight time).</p>
-    <label for="date">Release date</label>
+    <p class="note">Enter the airport-local check-in time. Retrieve Booking is clicked one second earlier.</p>
+    <label for="date">Check-in date</label>
     <input id="date" type="date">
-    <label for="time">Release time (HH:mm:ss.SSS)</label>
+    <label for="time">Check-in time (HH:mm:ss.SSS)</label>
     <input id="time" inputmode="numeric" placeholder="08:00:00.000">
     <button class="primary" id="schedule">Confirm schedule</button>
     <button id="cancel" disabled>Cancel schedule</button>
@@ -131,18 +131,19 @@ th { color: var(--muted); background: #f3f4f6; }
   </section>
 
   <section class="card">
-    <h2>Release timing (server time)</h2>
+    <h2>Retrieval timing (departure airport time)</h2>
     <table>
-      <thead><tr><th>Event</th><th>Time</th><th>Offset</th><th>Meaning</th></tr></thead>
+      <thead><tr><th>Event</th><th>Airport-local time (UTC offset)</th><th>From click target</th><th>Meaning</th></tr></thead>
       <tbody id="timing"></tbody>
     </table>
   </section>
 
   <section class="card">
     <h2>ⓘ Before you start</h2>
-    <p class="note">Keep the server running; stopping it cancels the schedule. One release only, no
-    retries. The recorded release is the server's local call time, not Scoot's receipt time, and a
-    passenger page does not confirm a seat. Passenger pages are saved on the server and may contain
+    <p class="note">Keep the server running. Retrieve Booking is clicked once at check-in minus one second.
+    Cancel before dispatch. A dispatched click cannot be undone.</p>
+    <p class="note" id="release-policy"></p>
+    <p class="note">A passenger page does not confirm a seat. Passenger pages are saved on the server and may contain
     personal data.</p>
   </section>
 </main>
@@ -246,6 +247,7 @@ th { color: var(--muted); background: #f3f4f6; }
     $("stage").classList.toggle("show", state.target != null);
     $("status").textContent = state.status_label;
     $("message").textContent = state.message;
+    $("release-policy").textContent = state.release_policy;
     $("steps").innerHTML = state.steps.map((step, index) => {
       const cls = index === state.step_index ? "current" : index < state.step_index ? "done" : "";
       const marker = index < state.step_index ? "✓" : index === state.step_index ? "→" : index + 1;
@@ -256,7 +258,7 @@ th { color: var(--muted); background: #f3f4f6; }
       || '<tr><td colspan="2" class="note">No activity yet.</td></tr>';
     $("timing").innerHTML = state.timing_rows
       .map(row => `<tr>${row.map(cell => `<td>${cell}</td>`).join("")}</tr>`).join("")
-      || '<tr><td colspan="4" class="note">No release timing yet.</td></tr>';
+      || '<tr><td colspan="4" class="note">No Retrieval timing yet.</td></tr>';
     const locked = state.active;
     ["pnr", "station", "date", "time"].forEach(id => { $(id).disabled = locked; });
     $("schedule").disabled = locked;

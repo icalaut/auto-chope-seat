@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    name: Build and notarize (${{ matrix.arch }})
+    name: Build macOS (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -28,6 +28,7 @@ jobs:
           python-version: "3.11"
 
       - name: Validate release version and signing configuration
+        id: signing
         env:
           CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -39,14 +40,22 @@ jobs:
             echo "::error::Release tags must use vMAJOR.MINOR.PATCH."
             exit 1
           fi
-          if [[ -z "$CERTIFICATE" || -z "$CERTIFICATE_PASSWORD" ||
-                -z "$NOTARY_KEY_ID" || -z "$NOTARY_ISSUER_ID" ||
-                -z "$NOTARY_PRIVATE_KEY" ]]; then
-            echo "::error::Configure the Apple certificate and notarization repository secrets before tagging a release."
+          if [[ -n "$CERTIFICATE" && -n "$CERTIFICATE_PASSWORD" &&
+                -n "$NOTARY_KEY_ID" && -n "$NOTARY_ISSUER_ID" &&
+                -n "$NOTARY_PRIVATE_KEY" ]]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          elif [[ -n "$CERTIFICATE" || -n "$CERTIFICATE_PASSWORD" ||
+                  -n "$NOTARY_KEY_ID" || -n "$NOTARY_ISSUER_ID" ||
+                  -n "$NOTARY_PRIVATE_KEY" ]]; then
+            echo "::error::Signing is partially configured. Configure all five secrets or remove the incomplete configuration."
             exit 1
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Apple signing is not configured; publishing clearly labeled unsigned builds."
           fi
 
       - name: Import Developer ID certificate
+        if: steps.signing.outputs.signed == 'true'
         uses: apple-actions/import-codesign-certs@v3
         with:
           p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
@@ -58,6 +67,7 @@ jobs:
           python -m pip install -r requirements-build.txt
 
       - name: Configure app code signing
+        if: steps.signing.outputs.signed == 'true'
         run: |
           IDENTITY="$(security find-identity -v -p codesigning |
             sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -n 1)"
@@ -70,21 +80,26 @@ jobs:
       - name: Build app bundle
         run: python scripts/build_macos.py "$GITHUB_REF_NAME"
 
-      - name: Sign, package, and notarize
+      - name: Package app (sign and notarize when configured)
         env:
+          SIGNED_BUILD: ${{ steps.signing.outputs.signed }}
           NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
           NOTARY_PRIVATE_KEY: ${{ secrets.APPLE_NOTARY_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           APP="dist/macos/${{ matrix.arch }}/auto-chope-seat.app"
-          IDENTITY="$(security find-identity -v -p codesigning |
-            sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -n 1)"
-          codesign --force --deep --options runtime --timestamp --sign "$IDENTITY" "$APP"
-          codesign --verify --deep --strict --verbose=2 "$APP"
+          SUFFIX="-unsigned"
+          if [[ "$SIGNED_BUILD" == "true" ]]; then
+            IDENTITY="$(security find-identity -v -p codesigning |
+              sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -n 1)"
+            codesign --force --deep --options runtime --timestamp --sign "$IDENTITY" "$APP"
+            codesign --verify --deep --strict --verbose=2 "$APP"
+            SUFFIX=""
+          fi
 
           VERSION="${GITHUB_REF_NAME#v}"
-          DMG="auto-chope-seat-${GITHUB_REF_NAME}-${{ matrix.arch }}.dmg"
+          DMG="auto-chope-seat-${GITHUB_REF_NAME}-${{ matrix.arch }}${SUFFIX}.dmg"
           STAGING="$RUNNER_TEMP/auto-chope-seat-${{ matrix.arch }}"
           mkdir -p "$STAGING"
           cp -R "$APP" "$STAGING/"
@@ -92,13 +107,16 @@ jobs:
           hdiutil create -volname "auto-chope-seat $VERSION (${{ matrix.arch }})" \
             -srcfolder "$STAGING" -ov -format UDZO "$DMG"
 
-          KEY_FILE="$RUNNER_TEMP/AuthKey_${NOTARY_KEY_ID}.p8"
-          printf '%s\n' "$NOTARY_PRIVATE_KEY" > "$KEY_FILE"
-          chmod 600 "$KEY_FILE"
-          xcrun notarytool submit "$DMG" --key "$KEY_FILE" \
-            --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --wait
-          xcrun stapler staple "$DMG"
-          xcrun stapler validate "$DMG"
+          if [[ "$SIGNED_BUILD" == "true" ]]; then
+            KEY_FILE="$RUNNER_TEMP/AuthKey_${NOTARY_KEY_ID}.p8"
+            printf '%s\n' "$NOTARY_PRIVATE_KEY" > "$KEY_FILE"
+            chmod 600 "$KEY_FILE"
+            xcrun notarytool submit "$DMG" --key "$KEY_FILE" \
+              --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --wait
+            xcrun stapler staple "$DMG"
+            xcrun stapler validate "$DMG"
+            rm -f "$KEY_FILE"
+          fi
           mkdir -p release
           mv "$DMG" release/
 
@@ -114,6 +132,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: release
@@ -124,5 +143,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" release/*.dmg \
-            --verify-tag --generate-notes \
+            --verify-tag --notes-file RELEASE_NOTES.md \
             --title "auto-chope-seat $GITHUB_REF_NAME"

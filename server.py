@@ -10,12 +10,11 @@ import hmac
 import json
 import os
 import sys
-from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
-from app import (ACTIVE_STATUSES, PROGRESS_STEPS, STATUS_LABELS, Controller,
+from app import (ACTIVE_STATUSES, PROGRESS_STEPS, RELEASE_POLICY, Controller,
+                 display_time, status_label,
                  departure_stations, headline_countdown, progress_state,
                  stage_countdown, timing_table_rows)
 
@@ -31,12 +30,12 @@ MIN_TOKEN_LENGTH = 12
 
 def state_payload(controller: Controller) -> dict:
     state = controller.snapshot()
-    zone = ZoneInfo(state["timezone"]) if state.get("timezone") else None
     headline, caption = headline_countdown(state)
     status = state["status"]
     return {
         "status": status,
-        "status_label": STATUS_LABELS.get(status, status),
+        "status_label": status_label(state),
+        "release_policy": RELEASE_POLICY,
         "message": state["message"],
         "headline": headline,
         "caption": caption,
@@ -48,9 +47,9 @@ def state_payload(controller: Controller) -> dict:
         "target": state["target"] or (state.get("click_timing") or {}).get("target"),
         "server_now": state["now"],
         "timezone": state.get("timezone") or "",
-        "history": [{"time": datetime.fromtimestamp(event["at"], zone).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
+        "history": [{"time": display_time(event["at"], state.get("timezone") or ""),
                      "action": event["action"]} for event in state.get("history", [])],
-        "timing_rows": [list(row) for row in timing_table_rows(state.get("click_timing"))],
+        "timing_rows": [list(row) for row in timing_table_rows(state.get("click_timing"), state.get("timezone") or "")],
     }
 
 
